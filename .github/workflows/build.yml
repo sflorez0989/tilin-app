@@ -178,61 +178,61 @@ jobs:
                           val c = ctx.applicationContext
                           if (!Settings.canDrawOverlays(c)) {
                               Toast.makeText(c, titulo + "\n" + monto + " · " + banco, Toast.LENGTH_LONG).show()
-                              return@post
+                          } else {
+                              val wm = c.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                              ocultar(wm)
+                              val d = c.resources.displayMetrics.density
+
+                              val fondo = GradientDrawable()
+                              fondo.setColor(Color.parseColor("#0B7A4B"))
+                              fondo.cornerRadius = 24f * d
+
+                              val caja = LinearLayout(c)
+                              caja.orientation = LinearLayout.VERTICAL
+                              caja.gravity = Gravity.CENTER_HORIZONTAL
+                              caja.background = fondo
+                              caja.setPadding((28 * d).toInt(), (18 * d).toInt(), (28 * d).toInt(), (18 * d).toInt())
+
+                              val t1 = TextView(c)
+                              t1.text = titulo
+                              t1.textSize = 20f
+                              t1.setTextColor(Color.WHITE)
+                              t1.setTypeface(null, Typeface.BOLD)
+                              t1.gravity = Gravity.CENTER
+                              caja.addView(t1)
+
+                              val t2 = TextView(c)
+                              t2.text = monto
+                              t2.textSize = 34f
+                              t2.setTextColor(Color.parseColor("#FFC107"))
+                              t2.setTypeface(null, Typeface.BOLD)
+                              t2.gravity = Gravity.CENTER
+                              caja.addView(t2)
+
+                              val t3 = TextView(c)
+                              t3.text = banco
+                              t3.textSize = 15f
+                              t3.setTextColor(Color.parseColor("#D6F5E6"))
+                              t3.gravity = Gravity.CENTER
+                              caja.addView(t3)
+
+                              val lp = WindowManager.LayoutParams(
+                                  WindowManager.LayoutParams.WRAP_CONTENT,
+                                  WindowManager.LayoutParams.WRAP_CONTENT,
+                                  WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                                  WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                                      WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                                  PixelFormat.TRANSLUCENT
+                              )
+                              lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                              lp.y = (70 * d).toInt()
+
+                              wm.addView(caja, lp)
+                              vista = caja
+                              val r = Runnable { ocultar(wm) }
+                              quitar = r
+                              h.postDelayed(r, 5000)
                           }
-                          val wm = c.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-                          ocultar(wm)
-                          val d = c.resources.displayMetrics.density
-
-                          val fondo = GradientDrawable()
-                          fondo.setColor(Color.parseColor("#0B7A4B"))
-                          fondo.cornerRadius = 24f * d
-
-                          val caja = LinearLayout(c)
-                          caja.orientation = LinearLayout.VERTICAL
-                          caja.gravity = Gravity.CENTER_HORIZONTAL
-                          caja.background = fondo
-                          caja.setPadding((28 * d).toInt(), (18 * d).toInt(), (28 * d).toInt(), (18 * d).toInt())
-
-                          val t1 = TextView(c)
-                          t1.text = titulo
-                          t1.textSize = 20f
-                          t1.setTextColor(Color.WHITE)
-                          t1.setTypeface(null, Typeface.BOLD)
-                          t1.gravity = Gravity.CENTER
-                          caja.addView(t1)
-
-                          val t2 = TextView(c)
-                          t2.text = monto
-                          t2.textSize = 34f
-                          t2.setTextColor(Color.parseColor("#FFC107"))
-                          t2.setTypeface(null, Typeface.BOLD)
-                          t2.gravity = Gravity.CENTER
-                          caja.addView(t2)
-
-                          val t3 = TextView(c)
-                          t3.text = banco
-                          t3.textSize = 15f
-                          t3.setTextColor(Color.parseColor("#D6F5E6"))
-                          t3.gravity = Gravity.CENTER
-                          caja.addView(t3)
-
-                          val lp = WindowManager.LayoutParams(
-                              WindowManager.LayoutParams.WRAP_CONTENT,
-                              WindowManager.LayoutParams.WRAP_CONTENT,
-                              WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                              WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                                  WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-                              PixelFormat.TRANSLUCENT
-                          )
-                          lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                          lp.y = (70 * d).toInt()
-
-                          wm.addView(caja, lp)
-                          vista = caja
-                          val r = Runnable { ocultar(wm) }
-                          quitar = r
-                          h.postDelayed(r, 5000)
                       } catch (e: Exception) {
                       }
                   }
@@ -299,7 +299,7 @@ jobs:
                   val titulo = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
                   val cuerpo = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
                       ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
-                  val completo = "$titulo $cuerpo"
+                  val completo = titulo + " " + cuerpo
 
                   if (!esAppDePagos(sbn.packageName)) return
 
@@ -334,7 +334,7 @@ jobs:
                   Aviso.mostrar(
                       this,
                       if (nombre.isNotEmpty()) nombre else "Pago recibido",
-                      "\$ " + Aviso.fmt(monto),
+                      "$ " + Aviso.fmt(monto),
                       banco
                   )
               }
@@ -351,15 +351,15 @@ jobs:
                   var s = n.split(corte)[0].trim()
                   s = s.replace(Regex("^(?:hola|hey|ya|que|un|una|el|la)\\s+", RegexOption.IGNORE_CASE), "")
                   if (s.lowercase() in listOf("nequi", "bancolombia", "alguien", "te", "tu")) return ""
-                  s = s.lowercase().split(" ").filter { it.isNotBlank() }
-                      .joinToString(" ") { w -> w.replaceFirstChar { ch -> ch.uppercase() } }
-                  return s.take(40)
+                  val partes = s.lowercase().split(" ").filter { it.isNotBlank() }
+                  val resultado = partes.joinToString(" ") { w -> w.substring(0, 1).uppercase() + w.substring(1) }
+                  return resultado.take(40)
               }
 
               private fun sacarNombre(cuerpo: String, titulo: String): String {
                   val letras = "[\\p{L}]+(?:\\s+[\\p{L}]+){0,3}"
                   val antes = Regex("(" + letras + ")\\s+te\\s+(?:envi|mand|transfiri|deposit|pag|consign)", RegexOption.IGNORE_CASE)
-                  val despues = Regex("""\$\s?[\d.,]+\s+(?:de|desde)\s+(""" + letras + ")", RegexOption.IGNORE_CASE)
+                  val despues = Regex("[$]\\s?[\\d.,]+\\s+(?:de|desde)\\s+(" + letras + ")", RegexOption.IGNORE_CASE)
 
                   var n = limpiarNombre(antes.find(cuerpo)?.groupValues?.get(1) ?: "")
                   if (n.isEmpty()) n = limpiarNombre(despues.find(cuerpo)?.groupValues?.get(1) ?: "")
@@ -497,20 +497,16 @@ jobs:
 
               private fun leerPagos(): List<Pago> {
                   val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
-                  return (prefs.getString("pagos", "") ?: "")
-                      .split("\n")
-                      .filter { it.isNotBlank() }
-                      .map { it.split("|") }
-                      .filter { it.size >= 3 }
-                      .map {
-                          Pago(
-                              it[0].toLongOrNull() ?: 0L,
-                              it[1].toLongOrNull() ?: 0L,
-                              it[2],
-                              it.getOrElse(3) { "" },
-                              it.getOrElse(4) { it[2] }
-                          )
-                      }
+                  val lineas = (prefs.getString("pagos", "") ?: "").split("\n").filter { it.isNotBlank() }
+                  val resultado = mutableListOf<Pago>()
+                  for (linea in lineas) {
+                      val c = linea.split("|")
+                      if (c.size < 3) continue
+                      val nombre = if (c.size > 3) c[3] else ""
+                      val banco = if (c.size > 4) c[4] else c[2]
+                      resultado.add(Pago(c[0].toLongOrNull() ?: 0L, c[1].toLongOrNull() ?: 0L, c[2], nombre, banco))
+                  }
+                  return resultado
               }
 
               override fun onCreate(savedInstanceState: Bundle?) {
@@ -574,7 +570,7 @@ jobs:
                   val f = tarjeta(Color.parseColor("#1B221E"))
                   val quien = if (p.nombre.isNotEmpty()) p.nombre else "Pago recibido"
                   f.addView(texto(quien, 16f, Color.WHITE, true))
-                  f.addView(texto("+ \$ " + Aviso.fmt(p.monto), 22f, verde, true))
+                  f.addView(texto("+ $ " + Aviso.fmt(p.monto), 22f, verde, true))
                   f.addView(texto(p.banco + " · " + hora.format(Date(p.ts)), 13f, gris))
                   return f
               }
@@ -607,7 +603,7 @@ jobs:
 
                   val tTotal = tarjeta(Color.parseColor("#1B221E"))
                   tTotal.addView(texto("Hoy llevas", 14f, gris))
-                  tTotal.addView(texto("\$ " + Aviso.fmt(total), 40f, Color.WHITE, true))
+                  tTotal.addView(texto("$ " + Aviso.fmt(total), 40f, Color.WHITE, true))
                   tTotal.addView(texto(pagos.size.toString() + " pagos", 14f, verde, true))
                   contenido.addView(tTotal)
 
@@ -623,7 +619,7 @@ jobs:
                   }
                   contenido.addView(boton("Probar voz y aviso", activo) {
                       tts?.speak("Te llegaron 15000 pesos de Juan Pérez por Nequi", TextToSpeech.QUEUE_FLUSH, null, "test")
-                      Aviso.mostrar(this, "Juan Pérez", "\$ 15.000", "Nequi")
+                      Aviso.mostrar(this, "Juan Pérez", "$ 15.000", "Nequi")
                   })
                   if (activo) {
                       contenido.addView(boton("Permisos de notificaciones", false) {
@@ -669,17 +665,20 @@ jobs:
                   }
 
                   val grupos = pagos.groupBy { dia.format(Date(it.ts)) }
-                  for ((clave, lista) in grupos) {
-                      val etiqueta = when (clave) {
-                          hoy -> "Hoy"
-                          ayer -> "Ayer"
-                          else -> larga.format(Date(lista[0].ts)).replaceFirstChar { it.uppercase() }
+                  for (entrada in grupos.entries) {
+                      val clave = entrada.key
+                      val lista = entrada.value
+                      val etiqueta = if (clave == hoy) "Hoy"
+                      else if (clave == ayer) "Ayer"
+                      else {
+                          val txt = larga.format(Date(lista[0].ts))
+                          txt.substring(0, 1).uppercase() + txt.substring(1)
                       }
                       val total = lista.fold(0L) { a, p -> a + p.monto }
 
                       val cab = tarjeta(Color.parseColor("#12392A"))
                       cab.addView(texto(etiqueta, 16f, Color.WHITE, true))
-                      cab.addView(texto("\$ " + Aviso.fmt(total), 26f, verde, true))
+                      cab.addView(texto("$ " + Aviso.fmt(total), 26f, verde, true))
                       cab.addView(texto(lista.size.toString() + " pagos", 13f, gris))
                       contenido.addView(cab)
 
