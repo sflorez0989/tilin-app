@@ -55,8 +55,8 @@ jobs:
                   applicationId "com.tilin.app"
                   minSdk 26
                   targetSdk 34
-                  versionCode 2
-                  versionName "1.1"
+                  versionCode 3
+                  versionName "1.2"
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -152,7 +152,10 @@ jobs:
               private val palabras = listOf(
                   "te enviaron", "te envió", "te envio", "recibiste",
                   "te llegó", "te llego", "te pagaron", "te transfirieron",
-                  "has recibido"
+                  "has recibido", "te mandaron", "te mandó", "te mando",
+                  "te depositaron", "te transfirió", "te transfirio",
+                  "te consignaron", "llegó dinero", "llego dinero",
+                  "dinero recibido", "ha llegado", "te enviaron plata"
               )
 
               private val montoRegex =
@@ -178,9 +181,11 @@ jobs:
                       ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
                   val completo = "$titulo $texto"
 
-                  if (!completo.contains("$")) return
+                  if (!esAppDePagos(sbn.packageName)) return
 
                   guardarLog(sbn.packageName + ": " + completo)
+
+                  if (!completo.contains("$")) return
 
                   val minuscula = completo.lowercase()
                   if (palabras.none { minuscula.contains(it) }) return
@@ -202,6 +207,15 @@ jobs:
                   guardarPago(monto, app)
 
                   tts?.speak("Te llegaron $monto pesos", TextToSpeech.QUEUE_ADD, null, "pago")
+              }
+
+              private fun esAppDePagos(pkg: String): Boolean {
+                  val p = pkg.lowercase()
+                  return listOf(
+                      "nequi", "bancolombia", "daviplata", "davivienda",
+                      "com.nu.", "nubank", "bancodebogota", "bbva", "itau",
+                      "lulo", "movii", "pibank", "rappipay", "tpaga", "breb"
+                  ).any { p.contains(it) }
               }
 
               private fun guardarPago(monto: Long, app: String) {
@@ -389,7 +403,867 @@ jobs:
                       }
                   }
 
-                  val h2 = texto("Últimas notificaciones recibidas", 13f, gris, true)
+                  val h2 = texto("Últimas notificaciones de apps de pagos", 13f, gris, true)
+                  h2.setPadding(0, dp(20), 0, dp(6))
+                  contenido.addView(h2)
+                  val log = prefs.getString("log", "") ?: ""
+                  val lv = texto(if (log.isBlank()) "Todavía no hay notificaciones." else log, 11f, Color.parseColor("#6B7570"))
+                  lv.setTextIsSelectable(true)
+                  contenido.addView(lv)
+              }
+
+              override fun onInit(status: Int) {
+                  if (status == TextToSpeech.SUCCESS) {
+                      tts?.language = Locale("es", "CO")
+                  }
+              }
+
+              override fun onDestroy() {
+                  tts?.shutdown()
+                  super.onDestroy()
+              }
+          }
+          EOF
+      - run: gradle assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tilin-APK
+          path: app/build/outputs/apk/debug/app-debug.apkname: Build APK
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+      - name: Crear archivos de la app
+        run: |
+          mkdir -p app/src/main/java/com/tilin/app
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/values
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "Tilin"
+          include ':app'
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+          }
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+          android {
+              namespace 'com.tilin.app'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.tilin.app"
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 3
+                  versionName "1.2"
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+          EOF
+          cat > app/src/main/res/values/colors.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_bg">#0B7A4B</color>
+          </resources>
+          EOF
+          cat > app/src/main/res/drawable/ic_fg.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <group
+                  android:scaleX="2.5"
+                  android:scaleY="2.5"
+                  android:translateX="24"
+                  android:translateY="24">
+                  <path
+                      android:fillColor="#FFFFFF"
+                      android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z" />
+              </group>
+              <path
+                  android:fillColor="#FFC107"
+                  android:pathData="M79,38a9,9 0 1,0 -18,0a9,9 0 1,0 18,0z" />
+          </vector>
+          EOF
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_bg" />
+              <foreground android:drawable="@drawable/ic_fg" />
+          </adaptive-icon>
+          EOF
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_bg" />
+              <foreground android:drawable="@drawable/ic_fg" />
+          </adaptive-icon>
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round"
+                  android:label="Tilín"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".PagoListenerService"
+                      android:exported="true"
+                      android:label="Tilín"
+                      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.service.notification.NotificationListenerService" />
+                      </intent-filter>
+                  </service>
+              </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/tilin/app/PagoListenerService.kt <<'EOF'
+          package com.tilin.app
+
+          import android.app.Notification
+          import android.service.notification.NotificationListenerService
+          import android.service.notification.StatusBarNotification
+          import android.speech.tts.TextToSpeech
+          import java.util.Locale
+
+          class PagoListenerService : NotificationListenerService(), TextToSpeech.OnInitListener {
+
+              private var tts: TextToSpeech? = null
+
+              private val palabras = listOf(
+                  "te enviaron", "te envió", "te envio", "recibiste",
+                  "te llegó", "te llego", "te pagaron", "te transfirieron",
+                  "has recibido", "te mandaron", "te mandó", "te mando",
+                  "te depositaron", "te transfirió", "te transfirio",
+                  "te consignaron", "llegó dinero", "llego dinero",
+                  "dinero recibido", "ha llegado", "te enviaron plata"
+              )
+
+              private val montoRegex =
+                  Regex("""\$\s?(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,2})?|\d+)""")
+
+              override fun onCreate() {
+                  super.onCreate()
+                  tts = TextToSpeech(this, this)
+              }
+
+              override fun onInit(status: Int) {
+                  if (status == TextToSpeech.SUCCESS) {
+                      tts?.language = Locale("es", "CO")
+                  }
+              }
+
+              override fun onNotificationPosted(sbn: StatusBarNotification) {
+                  if (sbn.packageName == packageName) return
+
+                  val extras = sbn.notification.extras
+                  val titulo = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
+                  val texto = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+                      ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+                  val completo = "$titulo $texto"
+
+                  if (!esAppDePagos(sbn.packageName)) return
+
+                  guardarLog(sbn.packageName + ": " + completo)
+
+                  if (!completo.contains("$")) return
+
+                  val minuscula = completo.lowercase()
+                  if (palabras.none { minuscula.contains(it) }) return
+
+                  val match = montoRegex.find(completo) ?: return
+                  var n = match.groupValues[1]
+                  val c = n.lastIndexOf(',')
+                  if (c >= 0 && n.length - c - 1 <= 2) n = n.substring(0, c)
+                  n = n.replace(".", "").replace(",", "")
+                  val monto = n.toLongOrNull() ?: return
+
+                  val app = try {
+                      packageManager.getApplicationLabel(
+                          packageManager.getApplicationInfo(sbn.packageName, 0)
+                      ).toString()
+                  } catch (e: Exception) {
+                      sbn.packageName
+                  }
+                  guardarPago(monto, app)
+
+                  tts?.speak("Te llegaron $monto pesos", TextToSpeech.QUEUE_ADD, null, "pago")
+              }
+
+              private fun esAppDePagos(pkg: String): Boolean {
+                  val p = pkg.lowercase()
+                  return listOf(
+                      "nequi", "bancolombia", "daviplata", "davivienda",
+                      "com.nu.", "nubank", "bancodebogota", "bbva", "itau",
+                      "lulo", "movii", "pibank", "rappipay", "tpaga", "breb"
+                  ).any { p.contains(it) }
+              }
+
+              private fun guardarPago(monto: Long, app: String) {
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
+                  val actuales = prefs.getString("pagos", "") ?: ""
+                  val lista = actuales.split("\n").filter { it.isNotBlank() }.toMutableList()
+                  lista.add(0, System.currentTimeMillis().toString() + "|" + monto + "|" + app.replace("|", " ").replace("\n", " "))
+                  prefs.edit().putString("pagos", lista.take(200).joinToString("\n")).apply()
+              }
+
+              private fun guardarLog(linea: String) {
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
+                  val actuales = prefs.getString("log", "") ?: ""
+                  val lista = actuales.split("\n---\n").filter { it.isNotBlank() }.toMutableList()
+                  lista.add(0, linea)
+                  val recortada = lista.take(15).joinToString("\n---\n")
+                  prefs.edit().putString("log", recortada).apply()
+              }
+
+              override fun onDestroy() {
+                  tts?.shutdown()
+                  super.onDestroy()
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/tilin/app/MainActivity.kt <<'EOF'
+          package com.tilin.app
+
+          import android.app.Activity
+          import android.content.Intent
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.speech.tts.TextToSpeech
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          class MainActivity : Activity(), TextToSpeech.OnInitListener {
+
+              private var tts: TextToSpeech? = null
+              private lateinit var contenido: LinearLayout
+
+              private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+              private fun caja(color: Int, radio: Int, borde: Int = 0): GradientDrawable {
+                  val g = GradientDrawable()
+                  g.setColor(color)
+                  g.cornerRadius = dp(radio).toFloat()
+                  if (borde != 0) g.setStroke(dp(1), borde)
+                  return g
+              }
+
+              private fun texto(t: String, size: Float, color: Int, bold: Boolean = false): TextView {
+                  val v = TextView(this)
+                  v.text = t
+                  v.textSize = size
+                  v.setTextColor(color)
+                  if (bold) v.setTypeface(null, Typeface.BOLD)
+                  return v
+              }
+
+              private fun tarjeta(color: Int): LinearLayout {
+                  val l = LinearLayout(this)
+                  l.orientation = LinearLayout.VERTICAL
+                  l.background = caja(color, 20)
+                  l.setPadding(dp(18), dp(16), dp(18), dp(16))
+                  val p = LinearLayout.LayoutParams(-1, -2)
+                  p.setMargins(0, 0, 0, dp(12))
+                  l.layoutParams = p
+                  return l
+              }
+
+              private fun boton(t: String, lleno: Boolean, accion: () -> Unit): Button {
+                  val b = Button(this)
+                  b.text = t
+                  b.isAllCaps = false
+                  b.textSize = 16f
+                  b.setTextColor(if (lleno) Color.WHITE else Color.parseColor("#19C37D"))
+                  b.background = if (lleno) caja(Color.parseColor("#0B7A4B"), 14)
+                  else caja(Color.TRANSPARENT, 14, Color.parseColor("#19C37D"))
+                  b.setOnClickListener { accion() }
+                  val p = LinearLayout.LayoutParams(-1, dp(52))
+                  p.setMargins(0, 0, 0, dp(10))
+                  b.layoutParams = p
+                  return b
+              }
+
+              private fun fmt(n: Long): String =
+                  n.toString().reversed().chunked(3).joinToString(".").reversed()
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  tts = TextToSpeech(this, this)
+                  window.statusBarColor = Color.parseColor("#0F1411")
+                  window.navigationBarColor = Color.parseColor("#0F1411")
+
+                  val scroll = ScrollView(this)
+                  scroll.setBackgroundColor(Color.parseColor("#0F1411"))
+                  contenido = LinearLayout(this)
+                  contenido.orientation = LinearLayout.VERTICAL
+                  contenido.setPadding(dp(20), dp(24), dp(20), dp(32))
+                  scroll.addView(contenido)
+                  setContentView(scroll)
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  dibujar()
+              }
+
+              private fun dibujar() {
+                  contenido.removeAllViews()
+                  val gris = Color.parseColor("#9AA5A0")
+                  val verde = Color.parseColor("#19C37D")
+                  val ambar = Color.parseColor("#FFC107")
+
+                  val activos = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
+                  val activo = activos.contains(packageName)
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
+
+                  contenido.addView(texto("Tilín 🔔", 32f, Color.WHITE, true))
+                  val sub = texto("Tus pagos, en voz alta", 15f, gris)
+                  sub.setPadding(0, dp(2), 0, dp(20))
+                  contenido.addView(sub)
+
+                  val estado = tarjeta(if (activo) Color.parseColor("#12392A") else Color.parseColor("#3A2A12"))
+                  estado.addView(texto(
+                      if (activo) "● Activo y escuchando" else "● Falta el permiso",
+                      17f, if (activo) verde else ambar, true))
+                  estado.addView(texto(
+                      if (activo) "Tilín te avisará cuando llegue un pago."
+                      else "Toca el botón de abajo y activa Tilín en la lista.",
+                      14f, gris))
+                  contenido.addView(estado)
+
+                  val dia = SimpleDateFormat("yyyyMMdd", Locale.US)
+                  val hoy = dia.format(Date())
+                  val hora = SimpleDateFormat("h:mm a", Locale("es", "CO"))
+                  val pagos = (prefs.getString("pagos", "") ?: "")
+                      .split("\n")
+                      .filter { it.isNotBlank() }
+                      .map { it.split("|") }
+                      .filter { it.size >= 3 && dia.format(Date(it[0].toLongOrNull() ?: 0L)) == hoy }
+                  val total = pagos.fold(0L) { a, p -> a + (p[1].toLongOrNull() ?: 0L) }
+
+                  val tTotal = tarjeta(Color.parseColor("#1B221E"))
+                  tTotal.addView(texto("Hoy llevas", 14f, gris))
+                  tTotal.addView(texto("\$ " + fmt(total), 40f, Color.WHITE, true))
+                  tTotal.addView(texto(pagos.size.toString() + " pagos", 14f, verde, true))
+                  contenido.addView(tTotal)
+
+                  if (!activo) {
+                      contenido.addView(boton("Dar permiso de notificaciones", true) {
+                          startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                      })
+                  }
+                  contenido.addView(boton("Probar la voz", activo) {
+                      tts?.speak("Te llegaron 15000 pesos", TextToSpeech.QUEUE_FLUSH, null, "test")
+                  })
+                  if (activo) {
+                      contenido.addView(boton("Permisos de notificaciones", false) {
+                          startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                      })
+                  }
+
+                  val h1 = texto("Pagos de hoy", 18f, Color.WHITE, true)
+                  h1.setPadding(0, dp(14), 0, dp(10))
+                  contenido.addView(h1)
+
+                  if (pagos.isEmpty()) {
+                      contenido.addView(texto("Aún no hay pagos hoy.", 14f, gris))
+                  } else {
+                      for (p in pagos) {
+                          val f = tarjeta(Color.parseColor("#1B221E"))
+                          f.addView(texto("+ \$ " + fmt(p[1].toLongOrNull() ?: 0L), 22f, verde, true))
+                          f.addView(texto(p[2] + " · " + hora.format(Date(p[0].toLongOrNull() ?: 0L)), 13f, gris))
+                          contenido.addView(f)
+                      }
+                  }
+
+                  val h2 = texto("Últimas notificaciones de apps de pagos", 13f, gris, true)
+                  h2.setPadding(0, dp(20), 0, dp(6))
+                  contenido.addView(h2)
+                  val log = prefs.getString("log", "") ?: ""
+                  val lv = texto(if (log.isBlank()) "Todavía no hay notificaciones." else log, 11f, Color.parseColor("#6B7570"))
+                  lv.setTextIsSelectable(true)
+                  contenido.addView(lv)
+              }
+
+              override fun onInit(status: Int) {
+                  if (status == TextToSpeech.SUCCESS) {
+                      tts?.language = Locale("es", "CO")
+                  }
+              }
+
+              override fun onDestroy() {
+                  tts?.shutdown()
+                  super.onDestroy()
+              }
+          }
+          EOF
+      - run: gradle assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tilin-APK
+          path: app/build/outputs/apk/debug/app-debug.apkname: Build APK
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+      - name: Crear archivos de la app
+        run: |
+          mkdir -p app/src/main/java/com/tilin/app
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/values
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "Tilin"
+          include ':app'
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+          }
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+          android {
+              namespace 'com.tilin.app'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.tilin.app"
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 3
+                  versionName "1.2"
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+          EOF
+          cat > app/src/main/res/values/colors.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_bg">#0B7A4B</color>
+          </resources>
+          EOF
+          cat > app/src/main/res/drawable/ic_fg.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <group
+                  android:scaleX="2.5"
+                  android:scaleY="2.5"
+                  android:translateX="24"
+                  android:translateY="24">
+                  <path
+                      android:fillColor="#FFFFFF"
+                      android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z" />
+              </group>
+              <path
+                  android:fillColor="#FFC107"
+                  android:pathData="M79,38a9,9 0 1,0 -18,0a9,9 0 1,0 18,0z" />
+          </vector>
+          EOF
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_bg" />
+              <foreground android:drawable="@drawable/ic_fg" />
+          </adaptive-icon>
+          EOF
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_bg" />
+              <foreground android:drawable="@drawable/ic_fg" />
+          </adaptive-icon>
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round"
+                  android:label="Tilín"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".PagoListenerService"
+                      android:exported="true"
+                      android:label="Tilín"
+                      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.service.notification.NotificationListenerService" />
+                      </intent-filter>
+                  </service>
+              </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/tilin/app/PagoListenerService.kt <<'EOF'
+          package com.tilin.app
+
+          import android.app.Notification
+          import android.service.notification.NotificationListenerService
+          import android.service.notification.StatusBarNotification
+          import android.speech.tts.TextToSpeech
+          import java.util.Locale
+
+          class PagoListenerService : NotificationListenerService(), TextToSpeech.OnInitListener {
+
+              private var tts: TextToSpeech? = null
+
+              private val palabras = listOf(
+                  "te enviaron", "te envió", "te envio", "recibiste",
+                  "te llegó", "te llego", "te pagaron", "te transfirieron",
+                  "has recibido", "te mandaron", "te mandó", "te mando",
+                  "te depositaron", "te transfirió", "te transfirio",
+                  "te consignaron", "llegó dinero", "llego dinero",
+                  "dinero recibido", "ha llegado", "te enviaron plata"
+              )
+
+              private val montoRegex =
+                  Regex("""\$\s?(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,2})?|\d+)""")
+
+              override fun onCreate() {
+                  super.onCreate()
+                  tts = TextToSpeech(this, this)
+              }
+
+              override fun onInit(status: Int) {
+                  if (status == TextToSpeech.SUCCESS) {
+                      tts?.language = Locale("es", "CO")
+                  }
+              }
+
+              override fun onNotificationPosted(sbn: StatusBarNotification) {
+                  if (sbn.packageName == packageName) return
+
+                  val extras = sbn.notification.extras
+                  val titulo = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
+                  val texto = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+                      ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+                  val completo = "$titulo $texto"
+
+                  if (!esAppDePagos(sbn.packageName)) return
+
+                  guardarLog(sbn.packageName + ": " + completo)
+
+                  if (!completo.contains("$")) return
+
+                  val minuscula = completo.lowercase()
+                  if (palabras.none { minuscula.contains(it) }) return
+
+                  val match = montoRegex.find(completo) ?: return
+                  var n = match.groupValues[1]
+                  val c = n.lastIndexOf(',')
+                  if (c >= 0 && n.length - c - 1 <= 2) n = n.substring(0, c)
+                  n = n.replace(".", "").replace(",", "")
+                  val monto = n.toLongOrNull() ?: return
+
+                  val app = try {
+                      packageManager.getApplicationLabel(
+                          packageManager.getApplicationInfo(sbn.packageName, 0)
+                      ).toString()
+                  } catch (e: Exception) {
+                      sbn.packageName
+                  }
+                  guardarPago(monto, app)
+
+                  tts?.speak("Te llegaron $monto pesos", TextToSpeech.QUEUE_ADD, null, "pago")
+              }
+
+              private fun esAppDePagos(pkg: String): Boolean {
+                  val p = pkg.lowercase()
+                  return listOf(
+                      "nequi", "bancolombia", "daviplata", "davivienda",
+                      "com.nu.", "nubank", "bancodebogota", "bbva", "itau",
+                      "lulo", "movii", "pibank", "rappipay", "tpaga", "breb"
+                  ).any { p.contains(it) }
+              }
+
+              private fun guardarPago(monto: Long, app: String) {
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
+                  val actuales = prefs.getString("pagos", "") ?: ""
+                  val lista = actuales.split("\n").filter { it.isNotBlank() }.toMutableList()
+                  lista.add(0, System.currentTimeMillis().toString() + "|" + monto + "|" + app.replace("|", " ").replace("\n", " "))
+                  prefs.edit().putString("pagos", lista.take(200).joinToString("\n")).apply()
+              }
+
+              private fun guardarLog(linea: String) {
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
+                  val actuales = prefs.getString("log", "") ?: ""
+                  val lista = actuales.split("\n---\n").filter { it.isNotBlank() }.toMutableList()
+                  lista.add(0, linea)
+                  val recortada = lista.take(15).joinToString("\n---\n")
+                  prefs.edit().putString("log", recortada).apply()
+              }
+
+              override fun onDestroy() {
+                  tts?.shutdown()
+                  super.onDestroy()
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/tilin/app/MainActivity.kt <<'EOF'
+          package com.tilin.app
+
+          import android.app.Activity
+          import android.content.Intent
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.speech.tts.TextToSpeech
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          class MainActivity : Activity(), TextToSpeech.OnInitListener {
+
+              private var tts: TextToSpeech? = null
+              private lateinit var contenido: LinearLayout
+
+              private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+              private fun caja(color: Int, radio: Int, borde: Int = 0): GradientDrawable {
+                  val g = GradientDrawable()
+                  g.setColor(color)
+                  g.cornerRadius = dp(radio).toFloat()
+                  if (borde != 0) g.setStroke(dp(1), borde)
+                  return g
+              }
+
+              private fun texto(t: String, size: Float, color: Int, bold: Boolean = false): TextView {
+                  val v = TextView(this)
+                  v.text = t
+                  v.textSize = size
+                  v.setTextColor(color)
+                  if (bold) v.setTypeface(null, Typeface.BOLD)
+                  return v
+              }
+
+              private fun tarjeta(color: Int): LinearLayout {
+                  val l = LinearLayout(this)
+                  l.orientation = LinearLayout.VERTICAL
+                  l.background = caja(color, 20)
+                  l.setPadding(dp(18), dp(16), dp(18), dp(16))
+                  val p = LinearLayout.LayoutParams(-1, -2)
+                  p.setMargins(0, 0, 0, dp(12))
+                  l.layoutParams = p
+                  return l
+              }
+
+              private fun boton(t: String, lleno: Boolean, accion: () -> Unit): Button {
+                  val b = Button(this)
+                  b.text = t
+                  b.isAllCaps = false
+                  b.textSize = 16f
+                  b.setTextColor(if (lleno) Color.WHITE else Color.parseColor("#19C37D"))
+                  b.background = if (lleno) caja(Color.parseColor("#0B7A4B"), 14)
+                  else caja(Color.TRANSPARENT, 14, Color.parseColor("#19C37D"))
+                  b.setOnClickListener { accion() }
+                  val p = LinearLayout.LayoutParams(-1, dp(52))
+                  p.setMargins(0, 0, 0, dp(10))
+                  b.layoutParams = p
+                  return b
+              }
+
+              private fun fmt(n: Long): String =
+                  n.toString().reversed().chunked(3).joinToString(".").reversed()
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  tts = TextToSpeech(this, this)
+                  window.statusBarColor = Color.parseColor("#0F1411")
+                  window.navigationBarColor = Color.parseColor("#0F1411")
+
+                  val scroll = ScrollView(this)
+                  scroll.setBackgroundColor(Color.parseColor("#0F1411"))
+                  contenido = LinearLayout(this)
+                  contenido.orientation = LinearLayout.VERTICAL
+                  contenido.setPadding(dp(20), dp(24), dp(20), dp(32))
+                  scroll.addView(contenido)
+                  setContentView(scroll)
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  dibujar()
+              }
+
+              private fun dibujar() {
+                  contenido.removeAllViews()
+                  val gris = Color.parseColor("#9AA5A0")
+                  val verde = Color.parseColor("#19C37D")
+                  val ambar = Color.parseColor("#FFC107")
+
+                  val activos = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
+                  val activo = activos.contains(packageName)
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
+
+                  contenido.addView(texto("Tilín 🔔", 32f, Color.WHITE, true))
+                  val sub = texto("Tus pagos, en voz alta", 15f, gris)
+                  sub.setPadding(0, dp(2), 0, dp(20))
+                  contenido.addView(sub)
+
+                  val estado = tarjeta(if (activo) Color.parseColor("#12392A") else Color.parseColor("#3A2A12"))
+                  estado.addView(texto(
+                      if (activo) "● Activo y escuchando" else "● Falta el permiso",
+                      17f, if (activo) verde else ambar, true))
+                  estado.addView(texto(
+                      if (activo) "Tilín te avisará cuando llegue un pago."
+                      else "Toca el botón de abajo y activa Tilín en la lista.",
+                      14f, gris))
+                  contenido.addView(estado)
+
+                  val dia = SimpleDateFormat("yyyyMMdd", Locale.US)
+                  val hoy = dia.format(Date())
+                  val hora = SimpleDateFormat("h:mm a", Locale("es", "CO"))
+                  val pagos = (prefs.getString("pagos", "") ?: "")
+                      .split("\n")
+                      .filter { it.isNotBlank() }
+                      .map { it.split("|") }
+                      .filter { it.size >= 3 && dia.format(Date(it[0].toLongOrNull() ?: 0L)) == hoy }
+                  val total = pagos.fold(0L) { a, p -> a + (p[1].toLongOrNull() ?: 0L) }
+
+                  val tTotal = tarjeta(Color.parseColor("#1B221E"))
+                  tTotal.addView(texto("Hoy llevas", 14f, gris))
+                  tTotal.addView(texto("\$ " + fmt(total), 40f, Color.WHITE, true))
+                  tTotal.addView(texto(pagos.size.toString() + " pagos", 14f, verde, true))
+                  contenido.addView(tTotal)
+
+                  if (!activo) {
+                      contenido.addView(boton("Dar permiso de notificaciones", true) {
+                          startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                      })
+                  }
+                  contenido.addView(boton("Probar la voz", activo) {
+                      tts?.speak("Te llegaron 15000 pesos", TextToSpeech.QUEUE_FLUSH, null, "test")
+                  })
+                  if (activo) {
+                      contenido.addView(boton("Permisos de notificaciones", false) {
+                          startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                      })
+                  }
+
+                  val h1 = texto("Pagos de hoy", 18f, Color.WHITE, true)
+                  h1.setPadding(0, dp(14), 0, dp(10))
+                  contenido.addView(h1)
+
+                  if (pagos.isEmpty()) {
+                      contenido.addView(texto("Aún no hay pagos hoy.", 14f, gris))
+                  } else {
+                      for (p in pagos) {
+                          val f = tarjeta(Color.parseColor("#1B221E"))
+                          f.addView(texto("+ \$ " + fmt(p[1].toLongOrNull() ?: 0L), 22f, verde, true))
+                          f.addView(texto(p[2] + " · " + hora.format(Date(p[0].toLongOrNull() ?: 0L)), 13f, gris))
+                          contenido.addView(f)
+                      }
+                  }
+
+                  val h2 = texto("Últimas notificaciones de apps de pagos", 13f, gris, true)
                   h2.setPadding(0, dp(20), 0, dp(6))
                   contenido.addView(h2)
                   val log = prefs.getString("log", "") ?: ""
