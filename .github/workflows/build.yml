@@ -55,8 +55,8 @@ jobs:
                   applicationId "com.tilin.app"
                   minSdk 26
                   targetSdk 34
-                  versionCode 3
-                  versionName "1.2"
+                  versionCode 4
+                  versionName "1.3"
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -111,6 +111,7 @@ jobs:
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
               <application
                   android:icon="@mipmap/ic_launcher"
                   android:roundIcon="@mipmap/ic_launcher_round"
@@ -135,6 +136,108 @@ jobs:
                   </service>
               </application>
           </manifest>
+          EOF
+          cat > app/src/main/java/com/tilin/app/Aviso.kt <<'EOF'
+          package com.tilin.app
+
+          import android.content.Context
+          import android.graphics.Color
+          import android.graphics.PixelFormat
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.os.Handler
+          import android.os.Looper
+          import android.provider.Settings
+          import android.view.Gravity
+          import android.view.View
+          import android.view.WindowManager
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import android.widget.Toast
+
+          object Aviso {
+              private val h = Handler(Looper.getMainLooper())
+              private var vista: View? = null
+              private var quitar: Runnable? = null
+
+              fun fmt(n: Long): String =
+                  n.toString().reversed().chunked(3).joinToString(".").reversed()
+
+              private fun ocultar(wm: WindowManager) {
+                  quitar?.let { h.removeCallbacks(it) }
+                  vista?.let {
+                      try { wm.removeView(it) } catch (e: Exception) { }
+                  }
+                  vista = null
+                  quitar = null
+              }
+
+              fun mostrar(ctx: Context, titulo: String, monto: String, banco: String) {
+                  h.post {
+                      try {
+                          val c = ctx.applicationContext
+                          if (!Settings.canDrawOverlays(c)) {
+                              Toast.makeText(c, titulo + "\n" + monto + " · " + banco, Toast.LENGTH_LONG).show()
+                              return@post
+                          }
+                          val wm = c.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                          ocultar(wm)
+                          val d = c.resources.displayMetrics.density
+
+                          val fondo = GradientDrawable()
+                          fondo.setColor(Color.parseColor("#0B7A4B"))
+                          fondo.cornerRadius = 24f * d
+
+                          val caja = LinearLayout(c)
+                          caja.orientation = LinearLayout.VERTICAL
+                          caja.gravity = Gravity.CENTER_HORIZONTAL
+                          caja.background = fondo
+                          caja.setPadding((28 * d).toInt(), (18 * d).toInt(), (28 * d).toInt(), (18 * d).toInt())
+
+                          val t1 = TextView(c)
+                          t1.text = titulo
+                          t1.textSize = 20f
+                          t1.setTextColor(Color.WHITE)
+                          t1.setTypeface(null, Typeface.BOLD)
+                          t1.gravity = Gravity.CENTER
+                          caja.addView(t1)
+
+                          val t2 = TextView(c)
+                          t2.text = monto
+                          t2.textSize = 34f
+                          t2.setTextColor(Color.parseColor("#FFC107"))
+                          t2.setTypeface(null, Typeface.BOLD)
+                          t2.gravity = Gravity.CENTER
+                          caja.addView(t2)
+
+                          val t3 = TextView(c)
+                          t3.text = banco
+                          t3.textSize = 15f
+                          t3.setTextColor(Color.parseColor("#D6F5E6"))
+                          t3.gravity = Gravity.CENTER
+                          caja.addView(t3)
+
+                          val lp = WindowManager.LayoutParams(
+                              WindowManager.LayoutParams.WRAP_CONTENT,
+                              WindowManager.LayoutParams.WRAP_CONTENT,
+                              WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                              WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                                  WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                              PixelFormat.TRANSLUCENT
+                          )
+                          lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                          lp.y = (70 * d).toInt()
+
+                          wm.addView(caja, lp)
+                          vista = caja
+                          val r = Runnable { ocultar(wm) }
+                          quitar = r
+                          h.postDelayed(r, 5000)
+                      } catch (e: Exception) {
+                      }
+                  }
+              }
+          }
           EOF
           cat > app/src/main/java/com/tilin/app/PagoListenerService.kt <<'EOF'
           package com.tilin.app
@@ -161,6 +264,23 @@ jobs:
               private val montoRegex =
                   Regex("""\$\s?(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,2})?|\d+)""")
 
+              private val bancos = listOf(
+                  "Nequi" to Regex("nequi", RegexOption.IGNORE_CASE),
+                  "Bancolombia" to Regex("bancolombia", RegexOption.IGNORE_CASE),
+                  "Daviplata" to Regex("daviplata", RegexOption.IGNORE_CASE),
+                  "Davivienda" to Regex("davivienda", RegexOption.IGNORE_CASE),
+                  "Nu" to Regex("\\bnu\\b|nubank", RegexOption.IGNORE_CASE),
+                  "BBVA" to Regex("bbva", RegexOption.IGNORE_CASE),
+                  "Banco de Bogotá" to Regex("banco de bogot", RegexOption.IGNORE_CASE),
+                  "Itaú" to Regex("ita[uú]", RegexOption.IGNORE_CASE),
+                  "Banco Popular" to Regex("banco popular", RegexOption.IGNORE_CASE),
+                  "AV Villas" to Regex("av villas", RegexOption.IGNORE_CASE),
+                  "Banco de Occidente" to Regex("occidente", RegexOption.IGNORE_CASE),
+                  "Scotiabank" to Regex("scotiabank|colpatria", RegexOption.IGNORE_CASE),
+                  "Lulo" to Regex("\\blulo\\b", RegexOption.IGNORE_CASE),
+                  "Movii" to Regex("\\bmovii\\b", RegexOption.IGNORE_CASE)
+              )
+
               override fun onCreate() {
                   super.onCreate()
                   tts = TextToSpeech(this, this)
@@ -177,9 +297,9 @@ jobs:
 
                   val extras = sbn.notification.extras
                   val titulo = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
-                  val texto = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+                  val cuerpo = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
                       ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
-                  val completo = "$titulo $texto"
+                  val completo = "$titulo $cuerpo"
 
                   if (!esAppDePagos(sbn.packageName)) return
 
@@ -204,9 +324,48 @@ jobs:
                   } catch (e: Exception) {
                       sbn.packageName
                   }
-                  guardarPago(monto, app)
 
-                  tts?.speak("Te llegaron $monto pesos", TextToSpeech.QUEUE_ADD, null, "pago")
+                  val nombre = sacarNombre(cuerpo, titulo)
+                  val banco = sacarBanco(completo, app)
+                  guardarPago(monto, app, nombre, banco)
+
+                  val quien = if (nombre.isNotEmpty()) " de " + nombre else ""
+                  tts?.speak("Te llegaron " + monto + " pesos" + quien + " por " + banco, TextToSpeech.QUEUE_ADD, null, "pago")
+                  Aviso.mostrar(
+                      this,
+                      if (nombre.isNotEmpty()) nombre else "Pago recibido",
+                      "\$ " + Aviso.fmt(monto),
+                      banco
+                  )
+              }
+
+              private fun sacarBanco(texto: String, app: String): String {
+                  for (b in bancos) {
+                      if (b.second.containsMatchIn(texto)) return b.first
+                  }
+                  return app
+              }
+
+              private fun limpiarNombre(n: String): String {
+                  val corte = Regex("\\s+(?:en|por|a|el|la|con|y|desde|para|hoy|ahora|te)\\b", RegexOption.IGNORE_CASE)
+                  var s = n.split(corte)[0].trim()
+                  s = s.replace(Regex("^(?:hola|hey|ya|que|un|una|el|la)\\s+", RegexOption.IGNORE_CASE), "")
+                  if (s.lowercase() in listOf("nequi", "bancolombia", "alguien", "te", "tu")) return ""
+                  s = s.lowercase().split(" ").filter { it.isNotBlank() }
+                      .joinToString(" ") { w -> w.replaceFirstChar { ch -> ch.uppercase() } }
+                  return s.take(40)
+              }
+
+              private fun sacarNombre(cuerpo: String, titulo: String): String {
+                  val letras = "[\\p{L}]+(?:\\s+[\\p{L}]+){0,3}"
+                  val antes = Regex("(" + letras + ")\\s+te\\s+(?:envi|mand|transfiri|deposit|pag|consign)", RegexOption.IGNORE_CASE)
+                  val despues = Regex("""\$\s?[\d.,]+\s+(?:de|desde)\s+(""" + letras + ")", RegexOption.IGNORE_CASE)
+
+                  var n = limpiarNombre(antes.find(cuerpo)?.groupValues?.get(1) ?: "")
+                  if (n.isEmpty()) n = limpiarNombre(despues.find(cuerpo)?.groupValues?.get(1) ?: "")
+                  if (n.isEmpty()) n = limpiarNombre(antes.find(titulo)?.groupValues?.get(1) ?: "")
+                  if (n.isEmpty()) n = limpiarNombre(despues.find(titulo)?.groupValues?.get(1) ?: "")
+                  return n
               }
 
               private fun esAppDePagos(pkg: String): Boolean {
@@ -218,12 +377,13 @@ jobs:
                   ).any { p.contains(it) }
               }
 
-              private fun guardarPago(monto: Long, app: String) {
+              private fun guardarPago(monto: Long, app: String, nombre: String, banco: String) {
                   val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
                   val actuales = prefs.getString("pagos", "") ?: ""
                   val lista = actuales.split("\n").filter { it.isNotBlank() }.toMutableList()
-                  lista.add(0, System.currentTimeMillis().toString() + "|" + monto + "|" + app.replace("|", " ").replace("\n", " "))
-                  prefs.edit().putString("pagos", lista.take(200).joinToString("\n")).apply()
+                  val limpio = { s: String -> s.replace("|", " ").replace("\n", " ") }
+                  lista.add(0, System.currentTimeMillis().toString() + "|" + monto + "|" + limpio(app) + "|" + limpio(nombre) + "|" + limpio(banco))
+                  prefs.edit().putString("pagos", lista.take(3000).joinToString("\n")).apply()
               }
 
               private fun guardarLog(linea: String) {
@@ -249,9 +409,13 @@ jobs:
           import android.graphics.Color
           import android.graphics.Typeface
           import android.graphics.drawable.GradientDrawable
+          import android.net.Uri
           import android.os.Bundle
+          import android.os.Handler
+          import android.os.Looper
           import android.provider.Settings
           import android.speech.tts.TextToSpeech
+          import android.view.Gravity
           import android.widget.Button
           import android.widget.LinearLayout
           import android.widget.ScrollView
@@ -260,12 +424,33 @@ jobs:
           import java.util.Date
           import java.util.Locale
 
+          data class Pago(val ts: Long, val monto: Long, val app: String, val nombre: String, val banco: String)
+
           class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
               private var tts: TextToSpeech? = null
               private lateinit var contenido: LinearLayout
+              private lateinit var scroll: ScrollView
+              private lateinit var tabInicio: TextView
+              private lateinit var tabMov: TextView
+              private var pestana = 0
+              private var diaPintado = ""
+              private val h = Handler(Looper.getMainLooper())
+              private val tic = object : Runnable {
+                  override fun run() {
+                      if (hoyStr() != diaPintado) dibujar()
+                      h.postDelayed(this, 30000)
+                  }
+              }
+
+              private val gris = Color.parseColor("#9AA5A0")
+              private val verde = Color.parseColor("#19C37D")
+              private val ambar = Color.parseColor("#FFC107")
+              private val fondo = Color.parseColor("#0F1411")
 
               private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+              private fun hoyStr(): String = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
 
               private fun caja(color: Int, radio: Int, borde: Int = 0): GradientDrawable {
                   val g = GradientDrawable()
@@ -310,35 +495,91 @@ jobs:
                   return b
               }
 
-              private fun fmt(n: Long): String =
-                  n.toString().reversed().chunked(3).joinToString(".").reversed()
+              private fun leerPagos(): List<Pago> {
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
+                  return (prefs.getString("pagos", "") ?: "")
+                      .split("\n")
+                      .filter { it.isNotBlank() }
+                      .map { it.split("|") }
+                      .filter { it.size >= 3 }
+                      .map {
+                          Pago(
+                              it[0].toLongOrNull() ?: 0L,
+                              it[1].toLongOrNull() ?: 0L,
+                              it[2],
+                              it.getOrElse(3) { "" },
+                              it.getOrElse(4) { it[2] }
+                          )
+                      }
+              }
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   tts = TextToSpeech(this, this)
-                  window.statusBarColor = Color.parseColor("#0F1411")
-                  window.navigationBarColor = Color.parseColor("#0F1411")
+                  window.statusBarColor = fondo
+                  window.navigationBarColor = Color.parseColor("#161C18")
 
-                  val scroll = ScrollView(this)
-                  scroll.setBackgroundColor(Color.parseColor("#0F1411"))
+                  val raiz = LinearLayout(this)
+                  raiz.orientation = LinearLayout.VERTICAL
+                  raiz.setBackgroundColor(fondo)
+
+                  scroll = ScrollView(this)
+                  scroll.layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
                   contenido = LinearLayout(this)
                   contenido.orientation = LinearLayout.VERTICAL
                   contenido.setPadding(dp(20), dp(24), dp(20), dp(32))
                   scroll.addView(contenido)
-                  setContentView(scroll)
+
+                  val barra = LinearLayout(this)
+                  barra.orientation = LinearLayout.HORIZONTAL
+                  barra.setBackgroundColor(Color.parseColor("#161C18"))
+                  barra.layoutParams = LinearLayout.LayoutParams(-1, -2)
+
+                  tabInicio = texto("Inicio", 16f, verde, true)
+                  tabMov = texto("Movimientos", 16f, gris, true)
+                  for (t in listOf(tabInicio, tabMov)) {
+                      t.gravity = Gravity.CENTER
+                      t.layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f)
+                      barra.addView(t)
+                  }
+                  tabInicio.setOnClickListener { pestana = 0; scroll.scrollTo(0, 0); dibujar() }
+                  tabMov.setOnClickListener { pestana = 1; scroll.scrollTo(0, 0); dibujar() }
+
+                  raiz.addView(scroll)
+                  raiz.addView(barra)
+                  setContentView(raiz)
               }
 
               override fun onResume() {
                   super.onResume()
                   dibujar()
+                  h.removeCallbacks(tic)
+                  h.postDelayed(tic, 30000)
+              }
+
+              override fun onPause() {
+                  h.removeCallbacks(tic)
+                  super.onPause()
               }
 
               private fun dibujar() {
+                  diaPintado = hoyStr()
+                  tabInicio.setTextColor(if (pestana == 0) verde else Color.parseColor("#6B7570"))
+                  tabMov.setTextColor(if (pestana == 1) verde else Color.parseColor("#6B7570"))
                   contenido.removeAllViews()
-                  val gris = Color.parseColor("#9AA5A0")
-                  val verde = Color.parseColor("#19C37D")
-                  val ambar = Color.parseColor("#FFC107")
+                  if (pestana == 0) dibujarInicio() else dibujarMov()
+              }
 
+              private fun filaPago(p: Pago, hora: SimpleDateFormat): LinearLayout {
+                  val f = tarjeta(Color.parseColor("#1B221E"))
+                  val quien = if (p.nombre.isNotEmpty()) p.nombre else "Pago recibido"
+                  f.addView(texto(quien, 16f, Color.WHITE, true))
+                  f.addView(texto("+ \$ " + Aviso.fmt(p.monto), 22f, verde, true))
+                  f.addView(texto(p.banco + " · " + hora.format(Date(p.ts)), 13f, gris))
+                  return f
+              }
+
+              private fun dibujarInicio() {
                   val activos = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
                   val activo = activos.contains(packageName)
                   val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
@@ -358,19 +599,15 @@ jobs:
                       14f, gris))
                   contenido.addView(estado)
 
+                  val hoy = hoyStr()
                   val dia = SimpleDateFormat("yyyyMMdd", Locale.US)
-                  val hoy = dia.format(Date())
                   val hora = SimpleDateFormat("h:mm a", Locale("es", "CO"))
-                  val pagos = (prefs.getString("pagos", "") ?: "")
-                      .split("\n")
-                      .filter { it.isNotBlank() }
-                      .map { it.split("|") }
-                      .filter { it.size >= 3 && dia.format(Date(it[0].toLongOrNull() ?: 0L)) == hoy }
-                  val total = pagos.fold(0L) { a, p -> a + (p[1].toLongOrNull() ?: 0L) }
+                  val pagos = leerPagos().filter { dia.format(Date(it.ts)) == hoy }
+                  val total = pagos.fold(0L) { a, p -> a + p.monto }
 
                   val tTotal = tarjeta(Color.parseColor("#1B221E"))
                   tTotal.addView(texto("Hoy llevas", 14f, gris))
-                  tTotal.addView(texto("\$ " + fmt(total), 40f, Color.WHITE, true))
+                  tTotal.addView(texto("\$ " + Aviso.fmt(total), 40f, Color.WHITE, true))
                   tTotal.addView(texto(pagos.size.toString() + " pagos", 14f, verde, true))
                   contenido.addView(tTotal)
 
@@ -379,8 +616,14 @@ jobs:
                           startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                       })
                   }
-                  contenido.addView(boton("Probar la voz", activo) {
-                      tts?.speak("Te llegaron 15000 pesos", TextToSpeech.QUEUE_FLUSH, null, "test")
+                  if (!Settings.canDrawOverlays(this)) {
+                      contenido.addView(boton("Activar avisos en pantalla", true) {
+                          startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName)))
+                      })
+                  }
+                  contenido.addView(boton("Probar voz y aviso", activo) {
+                      tts?.speak("Te llegaron 15000 pesos de Juan Pérez por Nequi", TextToSpeech.QUEUE_FLUSH, null, "test")
+                      Aviso.mostrar(this, "Juan Pérez", "\$ 15.000", "Nequi")
                   })
                   if (activo) {
                       contenido.addView(boton("Permisos de notificaciones", false) {
@@ -395,12 +638,7 @@ jobs:
                   if (pagos.isEmpty()) {
                       contenido.addView(texto("Aún no hay pagos hoy.", 14f, gris))
                   } else {
-                      for (p in pagos) {
-                          val f = tarjeta(Color.parseColor("#1B221E"))
-                          f.addView(texto("+ \$ " + fmt(p[1].toLongOrNull() ?: 0L), 22f, verde, true))
-                          f.addView(texto(p[2] + " · " + hora.format(Date(p[0].toLongOrNull() ?: 0L)), 13f, gris))
-                          contenido.addView(f)
-                      }
+                      for (p in pagos) contenido.addView(filaPago(p, hora))
                   }
 
                   val h2 = texto("Últimas notificaciones de apps de pagos", 13f, gris, true)
@@ -410,6 +648,43 @@ jobs:
                   val lv = texto(if (log.isBlank()) "Todavía no hay notificaciones." else log, 11f, Color.parseColor("#6B7570"))
                   lv.setTextIsSelectable(true)
                   contenido.addView(lv)
+              }
+
+              private fun dibujarMov() {
+                  contenido.addView(texto("Movimientos", 28f, Color.WHITE, true))
+                  val sub = texto("Pagos por día", 15f, gris)
+                  sub.setPadding(0, dp(2), 0, dp(20))
+                  contenido.addView(sub)
+
+                  val dia = SimpleDateFormat("yyyyMMdd", Locale.US)
+                  val hora = SimpleDateFormat("h:mm a", Locale("es", "CO"))
+                  val larga = SimpleDateFormat("EEEE d 'de' MMMM", Locale("es", "CO"))
+                  val hoy = hoyStr()
+                  val ayer = dia.format(Date(System.currentTimeMillis() - 86400000L))
+
+                  val pagos = leerPagos()
+                  if (pagos.isEmpty()) {
+                      contenido.addView(texto("Aún no hay movimientos.", 14f, gris))
+                      return
+                  }
+
+                  val grupos = pagos.groupBy { dia.format(Date(it.ts)) }
+                  for ((clave, lista) in grupos) {
+                      val etiqueta = when (clave) {
+                          hoy -> "Hoy"
+                          ayer -> "Ayer"
+                          else -> larga.format(Date(lista[0].ts)).replaceFirstChar { it.uppercase() }
+                      }
+                      val total = lista.fold(0L) { a, p -> a + p.monto }
+
+                      val cab = tarjeta(Color.parseColor("#12392A"))
+                      cab.addView(texto(etiqueta, 16f, Color.WHITE, true))
+                      cab.addView(texto("\$ " + Aviso.fmt(total), 26f, verde, true))
+                      cab.addView(texto(lista.size.toString() + " pagos", 13f, gris))
+                      contenido.addView(cab)
+
+                      for (p in lista) contenido.addView(filaPago(p, hora))
+                  }
               }
 
               override fun onInit(status: Int) {
