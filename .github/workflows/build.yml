@@ -55,8 +55,8 @@ jobs:
                   applicationId "com.tilin.app"
                   minSdk 26
                   targetSdk 34
-                  versionCode 6
-                  versionName "1.5"
+                  versionCode 8
+                  versionName "1.7"
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -286,6 +286,8 @@ jobs:
           class PagoListenerService : NotificationListenerService(), TextToSpeech.OnInitListener {
 
               private var tts: TextToSpeech? = null
+              private var ultimaClave = ""
+              private var ultimaHora = 0L
 
               private val palabras = listOf(
                   "te enviaron", "te envió", "te envio", "recibiste",
@@ -293,7 +295,15 @@ jobs:
                   "has recibido", "te mandaron", "te mandó", "te mando",
                   "te depositaron", "te transfirió", "te transfirio",
                   "te consignaron", "llegó dinero", "llego dinero",
-                  "dinero recibido", "ha llegado", "te enviaron plata"
+                  "dinero recibido", "ha llegado", "te enviaron plata",
+                  "recarga", "recepción", "recepcion", "bre-b", "bre b",
+                  "abono", "ingreso", "depósito", "deposito"
+              )
+
+              private val negativas = listOf(
+                  "enviaste", "pagaste", "compraste", "compra ", "retiro",
+                  "retiraste", "gmf", "impuesto", "cobro", "débito", "debito",
+                  "transferiste", "pago de", "pago a "
               )
 
               private val montoRegex =
@@ -343,6 +353,7 @@ jobs:
                   if (!completo.contains("$")) return
 
                   val minuscula = completo.lowercase()
+                  if (negativas.any { minuscula.contains(it) }) return
                   if (palabras.none { minuscula.contains(it) }) return
 
                   val match = montoRegex.find(completo) ?: return
@@ -360,47 +371,43 @@ jobs:
                       sbn.packageName
                   }
 
-                  val nombre = sacarNombre(cuerpo, titulo)
-                  val banco = sacarBanco(completo, app)
-                  guardarPago(monto, app, nombre, banco)
+                  val origen = sacarOrigen(completo, app)
 
-                  val quien = if (nombre.isNotEmpty()) " de " + nombre else ""
-                  tts?.speak("Te llegaron " + monto + " pesos" + quien + " por " + banco, TextToSpeech.QUEUE_ADD, null, "pago")
+                  val clave = monto.toString() + "|" + origen
+                  val ahora = System.currentTimeMillis()
+                  if (clave == ultimaClave && ahora - ultimaHora < 45000L) return
+                  ultimaClave = clave
+                  ultimaHora = ahora
+
+                  guardarPago(monto, app, "", origen)
+
+                  tts?.speak("Te llegaron " + monto + " pesos por " + origen, TextToSpeech.QUEUE_ADD, null, "pago")
                   Aviso.mostrar(
                       this,
-                      if (nombre.isNotEmpty()) nombre else "Pago recibido",
+                      origen,
                       "$ " + Aviso.fmt(monto),
-                      banco
+                      app
                   )
               }
 
-              private fun sacarBanco(texto: String, app: String): String {
+              private fun sacarOrigen(texto: String, app: String): String {
+                  val t = texto.lowercase()
+                  if (t.contains("bre-b") || t.contains("bre b")) return "Bre-B"
+                  var otro = ""
+                  for (b in bancos) {
+                      if (b.first != "Nequi" && b.second.containsMatchIn(texto)) {
+                          otro = b.first
+                          break
+                      }
+                  }
+                  if (t.contains("recarga")) {
+                      return if (otro.isNotEmpty()) "Recarga " + otro else "Recarga"
+                  }
+                  if (otro.isNotEmpty()) return otro
                   for (b in bancos) {
                       if (b.second.containsMatchIn(texto)) return b.first
                   }
                   return app
-              }
-
-              private fun limpiarNombre(n: String): String {
-                  val corte = Regex("\\s+(?:en|por|a|el|la|con|y|desde|para|hoy|ahora|te)\\b", RegexOption.IGNORE_CASE)
-                  var s = n.split(corte)[0].trim()
-                  s = s.replace(Regex("^(?:hola|hey|ya|que|un|una|el|la)\\s+", RegexOption.IGNORE_CASE), "")
-                  if (s.lowercase() in listOf("nequi", "bancolombia", "alguien", "te", "tu")) return ""
-                  val partes = s.lowercase().split(" ").filter { it.isNotBlank() }
-                  val resultado = partes.joinToString(" ") { w -> w.substring(0, 1).uppercase() + w.substring(1) }
-                  return resultado.take(40)
-              }
-
-              private fun sacarNombre(cuerpo: String, titulo: String): String {
-                  val letras = "[\\p{L}]+(?:\\s+[\\p{L}]+){0,3}"
-                  val antes = Regex("(" + letras + ")\\s+te\\s+(?:envi|mand|transfiri|deposit|pag|consign)", RegexOption.IGNORE_CASE)
-                  val despues = Regex("[$]\\s?[\\d.,]+\\s+(?:de|desde)\\s+(" + letras + ")", RegexOption.IGNORE_CASE)
-
-                  var n = limpiarNombre(antes.find(cuerpo)?.groupValues?.get(1) ?: "")
-                  if (n.isEmpty()) n = limpiarNombre(despues.find(cuerpo)?.groupValues?.get(1) ?: "")
-                  if (n.isEmpty()) n = limpiarNombre(antes.find(titulo)?.groupValues?.get(1) ?: "")
-                  if (n.isEmpty()) n = limpiarNombre(despues.find(titulo)?.groupValues?.get(1) ?: "")
-                  return n
               }
 
               private fun esAppDePagos(pkg: String): Boolean {
@@ -468,6 +475,7 @@ jobs:
           import android.widget.LinearLayout
           import android.widget.ScrollView
           import android.widget.TextView
+          import android.widget.Toast
           import java.text.SimpleDateFormat
           import java.util.Calendar
           import java.util.Date
@@ -605,6 +613,57 @@ jobs:
                   return resultado
               }
 
+              private fun compartir(txt: String) {
+                  val i = Intent(Intent.ACTION_SEND)
+                  i.type = "text/plain"
+                  i.putExtra(Intent.EXTRA_TEXT, txt)
+                  startActivity(Intent.createChooser(i, "Compartir con"))
+              }
+
+              private fun resumenHoy(): String {
+                  val dia = SimpleDateFormat("yyyyMMdd", Locale.US)
+                  val hora = SimpleDateFormat("h:mm a", Locale("es", "CO"))
+                  val fecha = SimpleDateFormat("d 'de' MMMM yyyy", Locale("es", "CO"))
+                  val hoy = hoyStr()
+                  val pagos = leerPagos().filter { dia.format(Date(it.ts)) == hoy }.reversed()
+                  val total = pagos.fold(0L) { a, p -> a + p.monto }
+                  val sb = StringBuilder()
+                  sb.append("Rovika - ").append(fecha.format(Date())).append("\n")
+                  sb.append("Total: $ ").append(Aviso.fmt(total)).append(" (").append(pagos.size).append(" pagos)\n\n")
+                  for (p in pagos) {
+                      sb.append("- ").append(p.banco).append(" $ ").append(Aviso.fmt(p.monto))
+                          .append(" · ").append(hora.format(Date(p.ts))).append("\n")
+                  }
+                  return sb.toString()
+              }
+
+              private fun restaurar(txt: String) {
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
+                  val actuales = (prefs.getString("pagos", "") ?: "").split("\n").filter { it.isNotBlank() }
+                  val nuevas = txt.split("\n").map { it.trim() }.filter {
+                      val c = it.split("|")
+                      c.size >= 3 && c[0].toLongOrNull() != null
+                  }
+                  val union = (actuales + nuevas).distinct()
+                      .sortedByDescending { it.split("|")[0].toLongOrNull() ?: 0L }
+                  prefs.edit().putString("pagos", union.take(3000).joinToString("\n")).apply()
+                  Toast.makeText(this, "Se restauraron " + nuevas.size + " movimientos", Toast.LENGTH_LONG).show()
+                  dibujar()
+              }
+
+              private fun pedirRestaurar() {
+                  val et = EditText(this)
+                  et.hint = "Pega aquí la copia de seguridad"
+                  et.minLines = 4
+                  et.gravity = Gravity.TOP
+                  AlertDialog.Builder(this)
+                      .setTitle("Restaurar copia")
+                      .setView(et)
+                      .setPositiveButton("Restaurar") { _, _ -> restaurar(et.text.toString()) }
+                      .setNegativeButton("Cancelar", null)
+                      .show()
+              }
+
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   tts = TextToSpeech(this, this)
@@ -664,10 +723,9 @@ jobs:
 
               private fun filaPago(p: Pago, hora: SimpleDateFormat): LinearLayout {
                   val f = tarjeta(panel)
-                  val quien = if (p.nombre.isNotEmpty()) p.nombre else "Pago recibido"
-                  f.addView(texto(quien, 16f, Color.WHITE, true))
+                  f.addView(texto(p.banco, 16f, Color.WHITE, true))
                   f.addView(texto("+ $ " + Aviso.fmt(p.monto), 22f, verde, true))
-                  f.addView(texto(p.banco + " · " + hora.format(Date(p.ts)), 13f, gris))
+                  f.addView(texto(p.app + " · " + hora.format(Date(p.ts)), 13f, gris))
                   return f
               }
 
@@ -796,8 +854,11 @@ jobs:
                       })
                   }
                   contenido.addView(boton("Probar voz y aviso", activo) {
-                      tts?.speak("Te llegaron 15000 pesos de Juan Pérez por Nequi", TextToSpeech.QUEUE_FLUSH, null, "test")
-                      Aviso.mostrar(this, "Juan Pérez", "$ 15.000", "Nequi")
+                      tts?.speak("Te llegaron 15000 pesos por Bre-B", TextToSpeech.QUEUE_FLUSH, null, "test")
+                      Aviso.mostrar(this, "Bre-B", "$ 15.000", "Nequi")
+                  })
+                  contenido.addView(boton("Compartir resumen de hoy", false) {
+                      compartir(resumenHoy())
                   })
                   if (activo) {
                       contenido.addView(boton("Permisos de notificaciones", false) {
@@ -830,8 +891,18 @@ jobs:
                   sub.setPadding(0, dp(2), 0, dp(14))
                   contenido.addView(sub)
 
+                  contenido.addView(boton("Guardar copia de seguridad", false) {
+                      val datos = getSharedPreferences("tilin", MODE_PRIVATE).getString("pagos", "") ?: ""
+                      if (datos.isBlank()) {
+                          Toast.makeText(this, "Aún no hay movimientos para guardar", Toast.LENGTH_LONG).show()
+                      } else {
+                          compartir(datos)
+                      }
+                  })
+                  contenido.addView(boton("Restaurar copia", false) { pedirRestaurar() })
+
                   val et = EditText(this)
-                  et.hint = "Buscar por nombre, banco o valor"
+                  et.hint = "Buscar por banco o valor"
                   et.setHintTextColor(Color.parseColor("#5B6781"))
                   et.setTextColor(Color.WHITE)
                   et.textSize = 15f
@@ -839,7 +910,7 @@ jobs:
                   et.background = caja(panel, 16, borde)
                   et.setPadding(dp(16), dp(12), dp(16), dp(12))
                   val el = LinearLayout.LayoutParams(-1, -2)
-                  el.setMargins(0, 0, 0, dp(14))
+                  el.setMargins(0, dp(6), 0, dp(14))
                   et.layoutParams = el
                   et.setText(filtro)
                   contenido.addView(et)
@@ -871,8 +942,8 @@ jobs:
 
                   val pagos = leerPagos().filter {
                       f.isEmpty() ||
-                          it.nombre.lowercase().contains(f) ||
                           it.banco.lowercase().contains(f) ||
+                          it.app.lowercase().contains(f) ||
                           it.monto.toString().contains(f)
                   }
                   if (pagos.isEmpty()) {
