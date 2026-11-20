@@ -34,7 +34,7 @@ jobs:
                   mavenCentral()
               }
           }
-          rootProject.name = "Tilin"
+          rootProject.name = "Rovika"
           include ':app'
           EOF
           cat > build.gradle <<'EOF'
@@ -55,8 +55,8 @@ jobs:
                   applicationId "com.tilin.app"
                   minSdk 26
                   targetSdk 34
-                  versionCode 5
-                  versionName "1.4"
+                  versionCode 6
+                  versionName "1.5"
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -70,7 +70,7 @@ jobs:
           cat > app/src/main/res/values/colors.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-              <color name="ic_bg">#0B7A4B</color>
+              <color name="ic_bg">#0B1230</color>
           </resources>
           EOF
           cat > app/src/main/res/drawable/ic_fg.xml <<'EOF'
@@ -90,7 +90,7 @@ jobs:
                       android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z" />
               </group>
               <path
-                  android:fillColor="#FFC107"
+                  android:fillColor="#22D3EE"
                   android:pathData="M79,38a9,9 0 1,0 -18,0a9,9 0 1,0 18,0z" />
           </vector>
           EOF
@@ -115,7 +115,7 @@ jobs:
               <application
                   android:icon="@mipmap/ic_launcher"
                   android:roundIcon="@mipmap/ic_launcher_round"
-                  android:label="Tilín"
+                  android:label="Rovika"
                   android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
                   <activity
                       android:name=".MainActivity"
@@ -128,7 +128,7 @@ jobs:
                   <service
                       android:name=".PagoListenerService"
                       android:exported="true"
-                      android:label="Tilín"
+                      android:label="Rovika"
                       android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
                       <intent-filter>
                           <action android:name="android.service.notification.NotificationListenerService" />
@@ -190,7 +190,7 @@ jobs:
                               val fondo = GradientDrawable()
                               fondo.setColor(Color.BLACK)
                               fondo.cornerRadius = 40f * d
-                              fondo.setStroke((1 * d).toInt().coerceAtLeast(1), Color.parseColor("#33FFFFFF"))
+                              fondo.setStroke((1 * d).toInt().coerceAtLeast(1), Color.parseColor("#5522D3EE"))
 
                               val caja = LinearLayout(c)
                               caja.orientation = LinearLayout.HORIZONTAL
@@ -218,7 +218,7 @@ jobs:
                               val t3 = TextView(c)
                               t3.text = banco
                               t3.textSize = 12f
-                              t3.setTextColor(Color.parseColor("#9AA5A0"))
+                              t3.setTextColor(Color.parseColor("#8A97B0"))
                               t3.maxLines = 1
                               centro.addView(t3)
                               caja.addView(centro)
@@ -226,7 +226,7 @@ jobs:
                               val t2 = TextView(c)
                               t2.text = monto
                               t2.textSize = 22f
-                              t2.setTextColor(Color.parseColor("#19C37D"))
+                              t2.setTextColor(Color.parseColor("#2EE59D"))
                               t2.setTypeface(null, Typeface.BOLD)
                               t2.maxLines = 1
                               caja.addView(t2)
@@ -439,9 +439,17 @@ jobs:
           cat > app/src/main/java/com/tilin/app/MainActivity.kt <<'EOF'
           package com.tilin.app
 
+          import android.animation.ValueAnimator
           import android.app.Activity
+          import android.app.AlertDialog
+          import android.content.Context
           import android.content.Intent
+          import android.graphics.Canvas
           import android.graphics.Color
+          import android.graphics.LinearGradient
+          import android.graphics.Paint
+          import android.graphics.RectF
+          import android.graphics.Shader
           import android.graphics.Typeface
           import android.graphics.drawable.GradientDrawable
           import android.net.Uri
@@ -450,26 +458,69 @@ jobs:
           import android.os.Looper
           import android.provider.Settings
           import android.speech.tts.TextToSpeech
+          import android.text.Editable
+          import android.text.InputType
+          import android.text.TextWatcher
           import android.view.Gravity
+          import android.view.View
           import android.widget.Button
+          import android.widget.EditText
           import android.widget.LinearLayout
           import android.widget.ScrollView
           import android.widget.TextView
           import java.text.SimpleDateFormat
+          import java.util.Calendar
           import java.util.Date
           import java.util.Locale
 
           data class Pago(val ts: Long, val monto: Long, val app: String, val nombre: String, val banco: String)
 
+          class Barras(c: Context, private val vals: List<Long>, private val etiquetas: List<String>) : View(c) {
+              private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+              override fun onDraw(canvas: Canvas) {
+                  super.onDraw(canvas)
+                  val d = resources.displayMetrics.density
+                  val w = width.toFloat()
+                  val base = height.toFloat() - 22f * d
+                  val tope = 6f * d
+                  val max = (vals.maxOrNull() ?: 0L).coerceAtLeast(1L).toFloat()
+                  val n = vals.size
+                  val slot = w / n
+                  val bw = slot * 0.5f
+                  for (i in 0 until n) {
+                      val x = slot * i + (slot - bw) / 2f
+                      var alto = (base - tope) * vals[i].toFloat() / max
+                      if (alto < 3f * d) alto = 3f * d
+                      val hoy = i == n - 1
+                      p.shader = LinearGradient(
+                          0f, base - alto, 0f, base,
+                          Color.parseColor(if (hoy) "#22D3EE" else "#2F6BFF"),
+                          Color.parseColor(if (hoy) "#2F6BFF" else "#1B2F66"),
+                          Shader.TileMode.CLAMP
+                      )
+                      canvas.drawRoundRect(RectF(x, base - alto, x + bw, base), 6f * d, 6f * d, p)
+                      p.shader = null
+                      p.color = Color.parseColor(if (hoy) "#22D3EE" else "#8A97B0")
+                      p.textSize = 11f * d
+                      p.textAlign = Paint.Align.CENTER
+                      canvas.drawText(etiquetas[i], x + bw / 2f, height.toFloat() - 5f * d, p)
+                  }
+              }
+          }
+
           class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
               private var tts: TextToSpeech? = null
               private lateinit var contenido: LinearLayout
+              private lateinit var listaMov: LinearLayout
               private lateinit var scroll: ScrollView
               private lateinit var tabInicio: TextView
               private lateinit var tabMov: TextView
               private var pestana = 0
               private var diaPintado = ""
+              private var ultimoTotal = 0L
+              private var filtro = ""
               private val h = Handler(Looper.getMainLooper())
               private val tic = object : Runnable {
                   override fun run() {
@@ -478,20 +529,30 @@ jobs:
                   }
               }
 
-              private val gris = Color.parseColor("#9AA5A0")
-              private val verde = Color.parseColor("#19C37D")
+              private val gris = Color.parseColor("#8A97B0")
+              private val verde = Color.parseColor("#2EE59D")
+              private val cian = Color.parseColor("#22D3EE")
+              private val azul = Color.parseColor("#2F6BFF")
               private val ambar = Color.parseColor("#FFC107")
-              private val fondo = Color.parseColor("#0F1411")
+              private val fondo = Color.parseColor("#070B14")
+              private val panel = Color.parseColor("#0F1626")
+              private val borde = Color.parseColor("#1F2F4D")
 
               private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
               private fun hoyStr(): String = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
 
-              private fun caja(color: Int, radio: Int, borde: Int = 0): GradientDrawable {
+              private fun caja(color: Int, radio: Int, bordeColor: Int = 0): GradientDrawable {
                   val g = GradientDrawable()
                   g.setColor(color)
                   g.cornerRadius = dp(radio).toFloat()
-                  if (borde != 0) g.setStroke(dp(1), borde)
+                  if (bordeColor != 0) g.setStroke(dp(1), bordeColor)
+                  return g
+              }
+
+              private fun degradado(): GradientDrawable {
+                  val g = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(azul, cian))
+                  g.cornerRadius = dp(16).toFloat()
                   return g
               }
 
@@ -504,10 +565,10 @@ jobs:
                   return v
               }
 
-              private fun tarjeta(color: Int): LinearLayout {
+              private fun tarjeta(color: Int, bordeColor: Int = borde): LinearLayout {
                   val l = LinearLayout(this)
                   l.orientation = LinearLayout.VERTICAL
-                  l.background = caja(color, 20)
+                  l.background = caja(color, 22, bordeColor)
                   l.setPadding(dp(18), dp(16), dp(18), dp(16))
                   val p = LinearLayout.LayoutParams(-1, -2)
                   p.setMargins(0, 0, 0, dp(12))
@@ -520,9 +581,9 @@ jobs:
                   b.text = t
                   b.isAllCaps = false
                   b.textSize = 16f
-                  b.setTextColor(if (lleno) Color.WHITE else Color.parseColor("#19C37D"))
-                  b.background = if (lleno) caja(Color.parseColor("#0B7A4B"), 14)
-                  else caja(Color.TRANSPARENT, 14, Color.parseColor("#19C37D"))
+                  b.setTypeface(null, Typeface.BOLD)
+                  b.setTextColor(if (lleno) Color.WHITE else cian)
+                  b.background = if (lleno) degradado() else caja(Color.TRANSPARENT, 16, cian)
                   b.setOnClickListener { accion() }
                   val p = LinearLayout.LayoutParams(-1, dp(52))
                   p.setMargins(0, 0, 0, dp(10))
@@ -548,7 +609,7 @@ jobs:
                   super.onCreate(savedInstanceState)
                   tts = TextToSpeech(this, this)
                   window.statusBarColor = fondo
-                  window.navigationBarColor = Color.parseColor("#161C18")
+                  window.navigationBarColor = Color.parseColor("#0A1020")
 
                   val raiz = LinearLayout(this)
                   raiz.orientation = LinearLayout.VERTICAL
@@ -563,10 +624,10 @@ jobs:
 
                   val barra = LinearLayout(this)
                   barra.orientation = LinearLayout.HORIZONTAL
-                  barra.setBackgroundColor(Color.parseColor("#161C18"))
+                  barra.setBackgroundColor(Color.parseColor("#0A1020"))
                   barra.layoutParams = LinearLayout.LayoutParams(-1, -2)
 
-                  tabInicio = texto("Inicio", 16f, verde, true)
+                  tabInicio = texto("Inicio", 16f, cian, true)
                   tabMov = texto("Movimientos", 16f, gris, true)
                   for (t in listOf(tabInicio, tabMov)) {
                       t.gravity = Gravity.CENTER
@@ -595,14 +656,14 @@ jobs:
 
               private fun dibujar() {
                   diaPintado = hoyStr()
-                  tabInicio.setTextColor(if (pestana == 0) verde else Color.parseColor("#6B7570"))
-                  tabMov.setTextColor(if (pestana == 1) verde else Color.parseColor("#6B7570"))
+                  tabInicio.setTextColor(if (pestana == 0) cian else Color.parseColor("#5B6781"))
+                  tabMov.setTextColor(if (pestana == 1) cian else Color.parseColor("#5B6781"))
                   contenido.removeAllViews()
                   if (pestana == 0) dibujarInicio() else dibujarMov()
               }
 
               private fun filaPago(p: Pago, hora: SimpleDateFormat): LinearLayout {
-                  val f = tarjeta(Color.parseColor("#1B221E"))
+                  val f = tarjeta(panel)
                   val quien = if (p.nombre.isNotEmpty()) p.nombre else "Pago recibido"
                   f.addView(texto(quien, 16f, Color.WHITE, true))
                   f.addView(texto("+ $ " + Aviso.fmt(p.monto), 22f, verde, true))
@@ -610,37 +671,119 @@ jobs:
                   return f
               }
 
+              private fun pedirMeta() {
+                  val et = EditText(this)
+                  et.inputType = InputType.TYPE_CLASS_NUMBER
+                  et.hint = "Ej: 150000"
+                  AlertDialog.Builder(this)
+                      .setTitle("Meta del día")
+                      .setView(et)
+                      .setPositiveButton("Guardar") { _, _ ->
+                          val v = et.text.toString().toLongOrNull()
+                          if (v != null && v > 0) {
+                              getSharedPreferences("tilin", MODE_PRIVATE).edit().putLong("meta", v).apply()
+                              dibujar()
+                          }
+                      }
+                      .setNegativeButton("Cancelar", null)
+                      .show()
+              }
+
               private fun dibujarInicio() {
                   val activos = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
                   val activo = activos.contains(packageName)
                   val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
 
-                  contenido.addView(texto("Tilín 🔔", 32f, Color.WHITE, true))
-                  val sub = texto("Tus pagos, en voz alta", 15f, gris)
+                  val titulo = texto("ROVIKA", 30f, Color.WHITE, true)
+                  titulo.letterSpacing = 0.25f
+                  contenido.addView(titulo)
+                  val sub = texto("Tus pagos, en voz alta", 15f, cian)
                   sub.setPadding(0, dp(2), 0, dp(20))
                   contenido.addView(sub)
 
-                  val estado = tarjeta(if (activo) Color.parseColor("#12392A") else Color.parseColor("#3A2A12"))
+                  val estado = tarjeta(if (activo) Color.parseColor("#0B2A33") else Color.parseColor("#3A2A12"),
+                      if (activo) cian else ambar)
                   estado.addView(texto(
                       if (activo) "● Activo y escuchando" else "● Falta el permiso",
-                      17f, if (activo) verde else ambar, true))
+                      17f, if (activo) cian else ambar, true))
                   estado.addView(texto(
-                      if (activo) "Tilín te avisará cuando llegue un pago."
-                      else "Toca el botón de abajo y activa Tilín en la lista.",
+                      if (activo) "Rovika te avisará cuando llegue un pago."
+                      else "Toca el botón de abajo y activa Rovika en la lista.",
                       14f, gris))
                   contenido.addView(estado)
 
                   val hoy = hoyStr()
                   val dia = SimpleDateFormat("yyyyMMdd", Locale.US)
                   val hora = SimpleDateFormat("h:mm a", Locale("es", "CO"))
-                  val pagos = leerPagos().filter { dia.format(Date(it.ts)) == hoy }
+                  val todos = leerPagos()
+                  val pagos = todos.filter { dia.format(Date(it.ts)) == hoy }
                   val total = pagos.fold(0L) { a, p -> a + p.monto }
 
-                  val tTotal = tarjeta(Color.parseColor("#1B221E"))
+                  val tTotal = tarjeta(panel, azul)
                   tTotal.addView(texto("Hoy llevas", 14f, gris))
-                  tTotal.addView(texto("$ " + Aviso.fmt(total), 40f, Color.WHITE, true))
+                  val tvTotal = texto("$ " + Aviso.fmt(total), 42f, Color.WHITE, true)
+                  tTotal.addView(tvTotal)
                   tTotal.addView(texto(pagos.size.toString() + " pagos", 14f, verde, true))
                   contenido.addView(tTotal)
+
+                  val desde = ultimoTotal
+                  ultimoTotal = total
+                  if (desde != total) {
+                      val a = ValueAnimator.ofFloat(desde.toFloat(), total.toFloat())
+                      a.duration = 900
+                      a.addUpdateListener {
+                          tvTotal.text = "$ " + Aviso.fmt((it.animatedValue as Float).toLong())
+                      }
+                      a.start()
+                  }
+
+                  val meta = prefs.getLong("meta", 150000L)
+                  val pct = (total * 100L / meta).coerceAtMost(100L).toInt()
+                  val tMeta = tarjeta(panel)
+                  tMeta.setOnClickListener { pedirMeta() }
+                  tMeta.addView(texto("Meta del día", 14f, gris))
+                  tMeta.addView(texto("$ " + Aviso.fmt(total) + " de $ " + Aviso.fmt(meta), 18f, Color.WHITE, true))
+                  val pista = LinearLayout(this)
+                  pista.orientation = LinearLayout.HORIZONTAL
+                  pista.weightSum = 100f
+                  pista.background = caja(Color.parseColor("#17233B"), 8)
+                  val pl = LinearLayout.LayoutParams(-1, dp(10))
+                  pl.setMargins(0, dp(10), 0, dp(8))
+                  pista.layoutParams = pl
+                  if (pct > 0) {
+                      val rell = View(this)
+                      rell.background = degradado()
+                      rell.layoutParams = LinearLayout.LayoutParams(0, -1, pct.toFloat())
+                      pista.addView(rell)
+                  }
+                  tMeta.addView(pista)
+                  tMeta.addView(texto(pct.toString() + "% · toca para cambiar la meta", 12f, if (pct >= 100) verde else gris))
+                  contenido.addView(tMeta)
+
+                  val vals = mutableListOf<Long>()
+                  val etiquetas = mutableListOf<String>()
+                  val porDia = todos.groupBy { dia.format(Date(it.ts)) }
+                  val nombreDia = SimpleDateFormat("EEE", Locale("es", "CO"))
+                  var totalSemana = 0L
+                  for (i in 6 downTo 0) {
+                      val cal = Calendar.getInstance()
+                      cal.add(Calendar.DAY_OF_YEAR, -i)
+                      val clave = dia.format(cal.time)
+                      val suma = (porDia[clave] ?: emptyList()).fold(0L) { a, p -> a + p.monto }
+                      vals.add(suma)
+                      totalSemana += suma
+                      val nd = nombreDia.format(cal.time)
+                      etiquetas.add(nd.substring(0, 1).uppercase())
+                  }
+                  val tSem = tarjeta(panel)
+                  tSem.addView(texto("Últimos 7 días", 14f, gris))
+                  tSem.addView(texto("$ " + Aviso.fmt(totalSemana), 24f, Color.WHITE, true))
+                  val grafica = Barras(this, vals, etiquetas)
+                  val gl = LinearLayout.LayoutParams(-1, dp(150))
+                  gl.setMargins(0, dp(10), 0, 0)
+                  grafica.layoutParams = gl
+                  tSem.addView(grafica)
+                  contenido.addView(tSem)
 
                   if (!activo) {
                       contenido.addView(boton("Dar permiso de notificaciones", true) {
@@ -676,26 +819,64 @@ jobs:
                   h2.setPadding(0, dp(20), 0, dp(6))
                   contenido.addView(h2)
                   val log = prefs.getString("log", "") ?: ""
-                  val lv = texto(if (log.isBlank()) "Todavía no hay notificaciones." else log, 11f, Color.parseColor("#6B7570"))
+                  val lv = texto(if (log.isBlank()) "Todavía no hay notificaciones." else log, 11f, Color.parseColor("#5B6781"))
                   lv.setTextIsSelectable(true)
                   contenido.addView(lv)
               }
 
               private fun dibujarMov() {
                   contenido.addView(texto("Movimientos", 28f, Color.WHITE, true))
-                  val sub = texto("Pagos por día", 15f, gris)
-                  sub.setPadding(0, dp(2), 0, dp(20))
+                  val sub = texto("Pagos por día", 15f, cian)
+                  sub.setPadding(0, dp(2), 0, dp(14))
                   contenido.addView(sub)
 
+                  val et = EditText(this)
+                  et.hint = "Buscar por nombre, banco o valor"
+                  et.setHintTextColor(Color.parseColor("#5B6781"))
+                  et.setTextColor(Color.WHITE)
+                  et.textSize = 15f
+                  et.isSingleLine = true
+                  et.background = caja(panel, 16, borde)
+                  et.setPadding(dp(16), dp(12), dp(16), dp(12))
+                  val el = LinearLayout.LayoutParams(-1, -2)
+                  el.setMargins(0, 0, 0, dp(14))
+                  et.layoutParams = el
+                  et.setText(filtro)
+                  contenido.addView(et)
+
+                  listaMov = LinearLayout(this)
+                  listaMov.orientation = LinearLayout.VERTICAL
+                  contenido.addView(listaMov)
+
+                  et.addTextChangedListener(object : TextWatcher {
+                      override fun afterTextChanged(s: Editable?) {
+                          filtro = s?.toString() ?: ""
+                          pintarLista()
+                      }
+                      override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+                      override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+                  })
+
+                  pintarLista()
+              }
+
+              private fun pintarLista() {
+                  listaMov.removeAllViews()
                   val dia = SimpleDateFormat("yyyyMMdd", Locale.US)
                   val hora = SimpleDateFormat("h:mm a", Locale("es", "CO"))
                   val larga = SimpleDateFormat("EEEE d 'de' MMMM", Locale("es", "CO"))
                   val hoy = hoyStr()
                   val ayer = dia.format(Date(System.currentTimeMillis() - 86400000L))
+                  val f = filtro.trim().lowercase()
 
-                  val pagos = leerPagos()
+                  val pagos = leerPagos().filter {
+                      f.isEmpty() ||
+                          it.nombre.lowercase().contains(f) ||
+                          it.banco.lowercase().contains(f) ||
+                          it.monto.toString().contains(f)
+                  }
                   if (pagos.isEmpty()) {
-                      contenido.addView(texto("Aún no hay movimientos.", 14f, gris))
+                      listaMov.addView(texto(if (f.isEmpty()) "Aún no hay movimientos." else "No hay resultados.", 14f, gris))
                       return
                   }
 
@@ -711,13 +892,13 @@ jobs:
                       }
                       val total = lista.fold(0L) { a, p -> a + p.monto }
 
-                      val cab = tarjeta(Color.parseColor("#12392A"))
+                      val cab = tarjeta(Color.parseColor("#0B2A33"), cian)
                       cab.addView(texto(etiqueta, 16f, Color.WHITE, true))
-                      cab.addView(texto("$ " + Aviso.fmt(total), 26f, verde, true))
+                      cab.addView(texto("$ " + Aviso.fmt(total), 26f, cian, true))
                       cab.addView(texto(lista.size.toString() + " pagos", 13f, gris))
-                      contenido.addView(cab)
+                      listaMov.addView(cab)
 
-                      for (p in lista) contenido.addView(filaPago(p, hora))
+                      for (p in lista) listaMov.addView(filaPago(p, hora))
                   }
               }
 
@@ -736,5 +917,5 @@ jobs:
       - run: gradle assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: Tilin-APK
+          name: Rovika-APK
           path: app/build/outputs/apk/debug/app-debug.apk
