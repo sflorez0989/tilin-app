@@ -55,8 +55,8 @@ jobs:
                   applicationId "com.tilin.app"
                   minSdk 26
                   targetSdk 34
-                  versionCode 13
-                  versionName "2.2"
+                  versionCode 14
+                  versionName "2.3"
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -150,6 +150,40 @@ jobs:
               </application>
           </manifest>
           EOF
+          cat > app/src/main/java/com/tilin/app/Voz.kt <<'EOF'
+          package com.tilin.app
+
+          import android.content.Context
+          import android.speech.tts.TextToSpeech
+          import java.util.Locale
+
+          object Voz {
+              fun aplicar(tts: TextToSpeech?, c: Context) {
+                  if (tts == null) return
+                  try {
+                      val p = c.getSharedPreferences("tilin", Context.MODE_PRIVATE)
+                      tts.setLanguage(Locale("es", "CO"))
+                      val nombre = p.getString("vozNombre", "") ?: ""
+                      if (nombre.isNotEmpty()) {
+                          val v = tts.voices?.firstOrNull { it.name == nombre }
+                          if (v != null) tts.setVoice(v)
+                      }
+                      tts.setPitch(p.getInt("tono", 100) / 100f)
+                      tts.setSpeechRate(p.getInt("vel", 100) / 100f)
+                  } catch (e: Exception) { }
+              }
+
+              fun frase(c: Context, monto: Long, origen: String): String {
+                  val f = c.getSharedPreferences("tilin", Context.MODE_PRIVATE).getInt("frase", 0)
+                  return when (f) {
+                      1 -> "¡Tilín! " + monto + " pesos por " + origen
+                      2 -> monto.toString() + " pesos"
+                      3 -> "¡Tienes plata nueva! " + monto + " pesos por " + origen
+                      else -> "Te llegaron " + monto + " pesos por " + origen
+                  }
+              }
+          }
+          EOF
           cat > app/src/main/java/com/tilin/app/Aviso.kt <<'EOF'
           package com.tilin.app
 
@@ -174,6 +208,12 @@ jobs:
           import java.text.SimpleDateFormat
           import java.util.Date
           import java.util.Locale
+
+          object Paleta {
+              val fondos = listOf("#000000", "#0B2A33", "#12392A", "#2A1245", "#4A1230", "#3A2A12", "#0B1230", "#FFFFFF")
+              val acentos = listOf("#2EE59D", "#22D3EE", "#FFC107", "#FF4D8D", "#A78BFA", "#FF7A1A", "#2F6BFF", "#FFFFFF")
+              val emojis = listOf("🔔", "💰", "🤑", "💸", "🎉", "⭐", "🚀", "🔥", "💎", "😎")
+          }
 
           object Aviso {
               private const val CANAL = "pagos_recibidos"
@@ -202,12 +242,16 @@ jobs:
                   try {
                       val c = ctx.applicationContext
                       val p = c.getSharedPreferences("tilin", Context.MODE_PRIVATE)
-                      val estilo = p.getString("estilo", "sistema") ?: "sistema"
+                      val estilo = p.getString("estilo", "letrero") ?: "letrero"
                       val dur = p.getInt("dur", 6).coerceIn(2, 20)
                       if (estilo == "letrero" && Settings.canDrawOverlays(c)) {
+                          val fi = p.getInt("cFondo", 0).coerceIn(0, Paleta.fondos.size - 1)
+                          val ai = p.getInt("cAcento", 0).coerceIn(0, Paleta.acentos.size - 1)
+                          val emoji = p.getString("emoji", "🔔") ?: "🔔"
                           mostrarLetrero(
                               c, titulo, monto, banco, dur,
-                              p.getInt("tam", 1), p.getInt("posV", 0), p.getInt("posH", 1)
+                              p.getInt("tam", 1), p.getInt("posV", 0), p.getInt("posH", 1),
+                              Paleta.fondos[fi], Paleta.acentos[ai], emoji
                           )
                       } else {
                           if (estilo == "letrero") diag(c, "falta permiso de aparecer encima, uso emergente del sistema")
@@ -296,11 +340,12 @@ jobs:
 
               private fun mostrarLetrero(
                   c: Context, titulo: String, monto: String, banco: String,
-                  dur: Int, tam: Int, posV: Int, posH: Int
+                  dur: Int, tam: Int, posV: Int, posH: Int,
+                  fondoHex: String, acentoHex: String, emoji: String
               ) {
                   h.post {
                       try {
-                          val clave = tam.toString() + "-" + posV + "-" + posH
+                          val clave = tam.toString() + "-" + posV + "-" + posH + "-" + fondoHex + "-" + acentoHex + "-" + emoji
                           val actual = vista
                           if (actual != null && clave == claveActual) {
                               actual.animate().cancel()
@@ -318,10 +363,16 @@ jobs:
                               val d = c.resources.displayMetrics.density
                               val e = if (tam == 0) 0.8f else if (tam == 2) 1.4f else 1f
 
+                              val colFondo = Color.parseColor(fondoHex)
+                              val colAcento = Color.parseColor(acentoHex)
+                              val claro = Color.luminance(colFondo) > 0.5f
+                              val colTitulo = if (claro) Color.parseColor("#111111") else Color.WHITE
+                              val colBanco = if (claro) Color.parseColor("#555555") else Color.parseColor("#9AA5B8")
+
                               val fondo = GradientDrawable()
-                              fondo.setColor(Color.BLACK)
+                              fondo.setColor(colFondo)
                               fondo.cornerRadius = 40f * d
-                              fondo.setStroke((1 * d).toInt().coerceAtLeast(1), Color.parseColor("#5522D3EE"))
+                              fondo.setStroke((1.5f * d).toInt().coerceAtLeast(1), (colAcento and 0x00FFFFFF) or 0x77000000)
 
                               val caja = LinearLayout(c)
                               caja.orientation = LinearLayout.HORIZONTAL
@@ -332,10 +383,12 @@ jobs:
                                   (22 * d * e).toInt(), (10 * d * e).toInt()
                               )
 
-                              val ico = TextView(c)
-                              ico.text = "🔔"
-                              ico.textSize = 22f * e
-                              caja.addView(ico)
+                              if (emoji.isNotEmpty()) {
+                                  val ico = TextView(c)
+                                  ico.text = emoji
+                                  ico.textSize = 22f * e
+                                  caja.addView(ico)
+                              }
 
                               val centro = LinearLayout(c)
                               centro.orientation = LinearLayout.VERTICAL
@@ -344,7 +397,7 @@ jobs:
                               val t1 = TextView(c)
                               t1.text = titulo
                               t1.textSize = 15f * e
-                              t1.setTextColor(Color.WHITE)
+                              t1.setTextColor(colTitulo)
                               t1.setTypeface(null, Typeface.BOLD)
                               t1.maxLines = 1
                               centro.addView(t1)
@@ -352,7 +405,7 @@ jobs:
                               val t3 = TextView(c)
                               t3.text = banco
                               t3.textSize = 12f * e
-                              t3.setTextColor(Color.parseColor("#8A97B0"))
+                              t3.setTextColor(colBanco)
                               t3.maxLines = 1
                               centro.addView(t3)
                               caja.addView(centro)
@@ -360,7 +413,7 @@ jobs:
                               val t2 = TextView(c)
                               t2.text = monto
                               t2.textSize = 22f * e
-                              t2.setTextColor(Color.parseColor("#2EE59D"))
+                              t2.setTextColor(colAcento)
                               t2.setTypeface(null, Typeface.BOLD)
                               t2.maxLines = 1
                               caja.addView(t2)
@@ -414,6 +467,8 @@ jobs:
           import android.service.notification.NotificationListenerService
           import android.service.notification.StatusBarNotification
           import android.speech.tts.TextToSpeech
+          import java.text.SimpleDateFormat
+          import java.util.Date
           import java.util.Locale
 
           class PagoListenerService : NotificationListenerService(), TextToSpeech.OnInitListener {
@@ -472,7 +527,7 @@ jobs:
 
               override fun onInit(status: Int) {
                   if (status == TextToSpeech.SUCCESS) {
-                      tts?.language = Locale("es", "CO")
+                      Voz.aplicar(tts, this)
                   }
               }
 
@@ -482,6 +537,24 @@ jobs:
                   if (c >= 0 && n.length - c - 1 <= 2) n = n.substring(0, c)
                   n = n.replace(".", "").replace(",", "")
                   return n.toLongOrNull()
+              }
+
+              private fun totalHoy(): Long {
+                  val dia = SimpleDateFormat("yyyyMMdd", Locale.US)
+                  val hoy = dia.format(Date())
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
+                  var suma = 0L
+                  val lineas = (prefs.getString("pagos", "") ?: "").split("\n")
+                  for (linea in lineas) {
+                      if (linea.isBlank()) continue
+                      val c = linea.split("|")
+                      if (c.size < 3) continue
+                      val ts = c[0].toLongOrNull() ?: continue
+                      if (dia.format(Date(ts)) == hoy) {
+                          suma += (c[1].toLongOrNull() ?: 0L)
+                      }
+                  }
+                  return suma
               }
 
               override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -525,15 +598,22 @@ jobs:
                   ultimaClave = clave
                   ultimaHora = ahora
 
+                  val antes = totalHoy()
                   guardarPago(monto, app, "", origen)
+                  val meta = getSharedPreferences("tilin", MODE_PRIVATE).getLong("meta", 150000L)
+                  val cumplida = antes < meta && antes + monto >= meta
 
-                  tts?.speak("Te llegaron " + monto + " pesos por " + origen, TextToSpeech.QUEUE_ADD, null, "pago")
+                  Voz.aplicar(tts, this)
+                  tts?.speak(Voz.frase(this, monto, origen), TextToSpeech.QUEUE_ADD, null, "pago")
+                  if (cumplida) {
+                      tts?.speak("¡Meta del día cumplida! ¡Felicidades!", TextToSpeech.QUEUE_ADD, null, "meta")
+                  }
                   try {
                       Aviso.mostrar(
                           this,
                           origen,
                           "$ " + Aviso.fmt(monto),
-                          app
+                          if (cumplida) "¡Meta cumplida! 🎉" else app
                       )
                   } catch (e: Exception) {
                       Aviso.diag(this, "ERROR servicio: " + e.javaClass.simpleName + " " + (e.message ?: ""))
@@ -621,6 +701,7 @@ jobs:
           import android.os.Looper
           import android.provider.Settings
           import android.speech.tts.TextToSpeech
+          import android.speech.tts.Voice
           import android.text.Editable
           import android.text.InputType
           import android.text.TextWatcher
@@ -769,6 +850,12 @@ jobs:
                   return b
               }
 
+              private fun seccion(t: String) {
+                  val v = texto(t, 18f, Color.WHITE, true)
+                  v.setPadding(0, dp(14), 0, dp(10))
+                  contenido.addView(v)
+              }
+
               private fun fila(titulo: String, etiquetas: List<String>, actual: Int, elegir: (Int) -> Unit) {
                   val t = tarjeta(panel)
                   t.addView(texto(titulo, 14f, gris))
@@ -781,7 +868,7 @@ jobs:
                       val b = Button(this)
                       b.text = etiquetas[i]
                       b.isAllCaps = false
-                      b.textSize = 14f
+                      b.textSize = 13f
                       b.setTypeface(null, Typeface.BOLD)
                       val sel = i == actual
                       b.setTextColor(if (sel) Color.WHITE else cian)
@@ -794,6 +881,126 @@ jobs:
                   }
                   t.addView(f)
                   contenido.addView(t)
+              }
+
+              private fun ajusteNum(titulo: String, clave: String, def: Int, min: Int, max: Int, paso: Int, sufijo: String) {
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
+                  val valor = prefs.getInt(clave, def)
+                  val t = tarjeta(panel)
+                  t.addView(texto(titulo, 14f, gris))
+                  val rd = LinearLayout(this)
+                  rd.orientation = LinearLayout.HORIZONTAL
+                  rd.gravity = Gravity.CENTER_VERTICAL
+                  val rl = LinearLayout.LayoutParams(-1, -2)
+                  rl.setMargins(0, dp(10), 0, 0)
+                  rd.layoutParams = rl
+                  rd.addView(botonMini("−") {
+                      prefs.edit().putInt(clave, (valor - paso).coerceAtLeast(min)).apply()
+                      dibujar()
+                  })
+                  val tv = texto(valor.toString() + sufijo, 20f, Color.WHITE, true)
+                  tv.gravity = Gravity.CENTER
+                  tv.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                  rd.addView(tv)
+                  rd.addView(botonMini("+") {
+                      prefs.edit().putInt(clave, (valor + paso).coerceAtMost(max)).apply()
+                      dibujar()
+                  })
+                  t.addView(rd)
+                  contenido.addView(t)
+              }
+
+              private fun paleta(titulo: String, colores: List<String>, actual: Int, elegir: (Int) -> Unit) {
+                  val t = tarjeta(panel)
+                  t.addView(texto(titulo, 14f, gris))
+                  val f = LinearLayout(this)
+                  f.orientation = LinearLayout.HORIZONTAL
+                  val lp0 = LinearLayout.LayoutParams(-1, -2)
+                  lp0.setMargins(0, dp(10), 0, 0)
+                  f.layoutParams = lp0
+                  for (i in colores.indices) {
+                      val v = View(this)
+                      val g = GradientDrawable()
+                      g.setColor(Color.parseColor(colores[i]))
+                      g.cornerRadius = dp(12).toFloat()
+                      g.setStroke(dp(if (i == actual) 3 else 1), if (i == actual) cian else borde)
+                      v.background = g
+                      val p = LinearLayout.LayoutParams(0, dp(42), 1f)
+                      p.setMargins(dp(3), 0, dp(3), 0)
+                      v.layoutParams = p
+                      v.setOnClickListener { elegir(i) }
+                      f.addView(v)
+                  }
+                  t.addView(f)
+                  contenido.addView(t)
+              }
+
+              private fun emojiFila(actual: String, elegir: (String) -> Unit) {
+                  val t = tarjeta(panel)
+                  t.addView(texto("Emoji del letrero", 14f, gris))
+                  val lista = Paleta.emojis
+                  for (fila in 0..1) {
+                      val f = LinearLayout(this)
+                      f.orientation = LinearLayout.HORIZONTAL
+                      val lp0 = LinearLayout.LayoutParams(-1, -2)
+                      lp0.setMargins(0, dp(10), 0, 0)
+                      f.layoutParams = lp0
+                      for (j in 0..4) {
+                          val e = lista[fila * 5 + j]
+                          val b = TextView(this)
+                          b.text = e
+                          b.textSize = 26f
+                          b.gravity = Gravity.CENTER
+                          b.background = caja(Color.TRANSPARENT, 14, if (e == actual) cian else borde)
+                          val p = LinearLayout.LayoutParams(0, dp(52), 1f)
+                          p.setMargins(dp(3), 0, dp(3), 0)
+                          b.layoutParams = p
+                          b.setOnClickListener { elegir(e) }
+                          f.addView(b)
+                      }
+                      t.addView(f)
+                  }
+                  contenido.addView(t)
+              }
+
+              private fun vistaPrevia() {
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
+                  val fi = prefs.getInt("cFondo", 0).coerceIn(0, Paleta.fondos.size - 1)
+                  val ai = prefs.getInt("cAcento", 0).coerceIn(0, Paleta.acentos.size - 1)
+                  val emoji = prefs.getString("emoji", "🔔") ?: "🔔"
+                  val colFondo = Color.parseColor(Paleta.fondos[fi])
+                  val colAcento = Color.parseColor(Paleta.acentos[ai])
+                  val claro = Color.luminance(colFondo) > 0.5f
+                  val t = tarjeta(panel)
+                  t.addView(texto("Vista previa", 14f, gris))
+
+                  val c = LinearLayout(this)
+                  c.orientation = LinearLayout.HORIZONTAL
+                  c.gravity = Gravity.CENTER_VERTICAL
+                  c.background = caja(colFondo, 40, colAcento)
+                  c.setPadding(dp(18), dp(10), dp(22), dp(10))
+                  val lp = LinearLayout.LayoutParams(-2, -2)
+                  lp.gravity = Gravity.CENTER_HORIZONTAL
+                  lp.setMargins(0, dp(10), 0, 0)
+                  c.layoutParams = lp
+
+                  if (emoji.isNotEmpty()) {
+                      c.addView(texto(emoji, 22f, Color.WHITE))
+                  }
+                  val centro = LinearLayout(this)
+                  centro.orientation = LinearLayout.VERTICAL
+                  centro.setPadding(dp(12), 0, dp(18), 0)
+                  centro.addView(texto("Bre-B", 15f, if (claro) Color.parseColor("#111111") else Color.WHITE, true))
+                  centro.addView(texto("Nequi", 12f, if (claro) Color.parseColor("#555555") else Color.parseColor("#9AA5B8")))
+                  c.addView(centro)
+                  c.addView(texto("$ 15.000", 22f, colAcento, true))
+                  t.addView(c)
+                  contenido.addView(t)
+              }
+
+              private fun hablarPrueba() {
+                  Voz.aplicar(tts, this)
+                  tts?.speak(Voz.frase(this, 15000L, "Bre-B"), TextToSpeech.QUEUE_FLUSH, null, "prueba")
               }
 
               private fun leerPagos(): List<Pago> {
@@ -956,44 +1163,37 @@ jobs:
 
               private fun dibujarAjustes() {
                   val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
-                  val estilo = prefs.getString("estilo", "sistema") ?: "sistema"
+                  val estilo = prefs.getString("estilo", "letrero") ?: "letrero"
                   val letrero = estilo == "letrero"
 
                   contenido.addView(texto("Ajustes", 28f, Color.WHITE, true))
-                  val sub = texto("Cómo se ve el aviso de pago", 15f, cian)
-                  sub.setPadding(0, dp(2), 0, dp(14))
+                  val sub = texto("Personaliza tu Rovika", 15f, cian)
+                  sub.setPadding(0, dp(2), 0, dp(6))
                   contenido.addView(sub)
+
+                  seccion("Aviso en pantalla")
 
                   fila("Estilo del aviso", listOf("Emergente del sistema", "Letrero propio"), if (letrero) 1 else 0) { i ->
                       prefs.edit().putString("estilo", if (i == 1) "letrero" else "sistema").apply()
                       dibujar()
                   }
 
-                  val dur = prefs.getInt("dur", 6)
-                  val tDur = tarjeta(panel)
-                  tDur.addView(texto("Duración en pantalla", 14f, gris))
-                  val rd = LinearLayout(this)
-                  rd.orientation = LinearLayout.HORIZONTAL
-                  rd.gravity = Gravity.CENTER_VERTICAL
-                  val rl = LinearLayout.LayoutParams(-1, -2)
-                  rl.setMargins(0, dp(10), 0, 0)
-                  rd.layoutParams = rl
-                  rd.addView(botonMini("−") {
-                      prefs.edit().putInt("dur", (dur - 1).coerceAtLeast(2)).apply()
-                      dibujar()
-                  })
-                  val tv = texto(dur.toString() + " segundos", 20f, Color.WHITE, true)
-                  tv.gravity = Gravity.CENTER
-                  tv.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-                  rd.addView(tv)
-                  rd.addView(botonMini("+") {
-                      prefs.edit().putInt("dur", (dur + 1).coerceAtMost(20)).apply()
-                      dibujar()
-                  })
-                  tDur.addView(rd)
-                  contenido.addView(tDur)
+                  ajusteNum("Duración en pantalla", "dur", 6, 2, 20, 1, " segundos")
 
                   if (letrero) {
+                      vistaPrevia()
+                      paleta("Color del fondo", Paleta.fondos, prefs.getInt("cFondo", 0)) { i ->
+                          prefs.edit().putInt("cFondo", i).apply()
+                          dibujar()
+                      }
+                      paleta("Color del valor", Paleta.acentos, prefs.getInt("cAcento", 0)) { i ->
+                          prefs.edit().putInt("cAcento", i).apply()
+                          dibujar()
+                      }
+                      emojiFila(prefs.getString("emoji", "🔔") ?: "🔔") { e ->
+                          prefs.edit().putString("emoji", e).apply()
+                          dibujar()
+                      }
                       fila("Tamaño del letrero", listOf("Pequeño", "Mediano", "Grande"), prefs.getInt("tam", 1)) { i ->
                           prefs.edit().putInt("tam", i).apply()
                           dibujar()
@@ -1013,7 +1213,7 @@ jobs:
                       }
                   } else {
                       val nota = tarjeta(Color.parseColor("#0B2A33"), cian)
-                      nota.addView(texto("La emergente del sistema la maneja Android, por eso no se puede cambiar su tamaño ni su lugar. Para ajustarlos elige Letrero propio.", 13f, gris))
+                      nota.addView(texto("La emergente del sistema la maneja Android, por eso no se puede cambiar su tamaño, lugar ni colores. Para personalizarlos elige Letrero propio.", 13f, gris))
                       contenido.addView(nota)
                       val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                       if (!nm.areNotificationsEnabled()) {
@@ -1027,6 +1227,77 @@ jobs:
 
                   contenido.addView(boton("Probar aviso ahora", true) {
                       Aviso.mostrar(this, "Bre-B", "$ 15.000", "Nequi")
+                  })
+
+                  seccion("Voz")
+
+                  fila("Frase que dice", listOf("Normal", "Tilín", "Corta", "Alegre"), prefs.getInt("frase", 0)) { i ->
+                      prefs.edit().putInt("frase", i).apply()
+                      hablarPrueba()
+                      dibujar()
+                  }
+
+                  val tono = prefs.getInt("tono", 100)
+                  val vel = prefs.getInt("vel", 100)
+                  val presets = listOf(100 to 100, 190 to 125, 55 to 80, 70 to 95)
+                  val sel = presets.indexOfFirst { it.first == tono && it.second == vel }
+                  fila("Voces divertidas", listOf("Normal", "Ardilla", "Gigante", "Robot"), sel) { i ->
+                      prefs.edit().putInt("tono", presets[i].first).putInt("vel", presets[i].second).apply()
+                      hablarPrueba()
+                      dibujar()
+                  }
+
+                  ajusteNum("Tono de la voz", "tono", 100, 50, 200, 10, "%")
+                  ajusteNum("Velocidad de la voz", "vel", 100, 50, 200, 10, "%")
+
+                  val voces: List<Voice> = try {
+                      tts?.voices?.filter { it.locale.language == "es" }?.sortedBy { it.name } ?: emptyList()
+                  } catch (e: Exception) {
+                      emptyList()
+                  }
+                  val nombreActual = prefs.getString("vozNombre", "") ?: ""
+                  val tv = tarjeta(panel)
+                  tv.addView(texto("Voz del aviso", 14f, gris))
+                  val opciones = mutableListOf<Pair<String, String>>()
+                  opciones.add(Pair("Automática", ""))
+                  var n = 1
+                  for (v in voces.take(8)) {
+                      opciones.add(Pair("Voz " + n + " (" + v.locale.toString() + ")", v.name))
+                      n += 1
+                  }
+                  for (op in opciones) {
+                      val b = Button(this)
+                      b.text = op.first
+                      b.isAllCaps = false
+                      b.textSize = 14f
+                      b.setTypeface(null, Typeface.BOLD)
+                      val seleccionada = op.second == nombreActual
+                      b.setTextColor(if (seleccionada) Color.WHITE else cian)
+                      b.background = if (seleccionada) degradado() else caja(Color.TRANSPARENT, 14, borde)
+                      val p = LinearLayout.LayoutParams(-1, dp(44))
+                      p.setMargins(0, dp(8), 0, 0)
+                      b.layoutParams = p
+                      b.setOnClickListener {
+                          prefs.edit().putString("vozNombre", op.second).apply()
+                          hablarPrueba()
+                          dibujar()
+                      }
+                      tv.addView(b)
+                  }
+                  if (voces.isEmpty()) {
+                      val aviso = texto("Aún no cargan las voces en español. Sal y vuelve a entrar a Ajustes en unos segundos.", 12f, ambar)
+                      aviso.setPadding(0, dp(8), 0, 0)
+                      tv.addView(aviso)
+                  }
+                  contenido.addView(tv)
+
+                  contenido.addView(boton("Escuchar voz", true) { hablarPrueba() })
+                  contenido.addView(boton("Instalar o cambiar motor de voz", false) {
+                      try {
+                          startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+                      } catch (e: Exception) {
+                          Toast.makeText(this, "Busca Texto a voz en los Ajustes del sistema", Toast.LENGTH_LONG).show()
+                      }
                   })
 
                   val h3 = texto("Diagnóstico del aviso", 13f, gris, true)
@@ -1106,7 +1377,9 @@ jobs:
                       pista.addView(rell)
                   }
                   tMeta.addView(pista)
-                  tMeta.addView(texto(pct.toString() + "% · toca para cambiar la meta", 12f, if (pct >= 100) verde else gris))
+                  tMeta.addView(texto(
+                      if (pct >= 100) "🎉 ¡Meta cumplida!" else pct.toString() + "% · toca para cambiar la meta",
+                      12f, if (pct >= 100) verde else gris))
                   contenido.addView(tMeta)
 
                   val vals = mutableListOf<Long>()
@@ -1140,7 +1413,7 @@ jobs:
                       })
                   }
                   contenido.addView(boton("Probar voz y aviso", activo) {
-                      tts?.speak("Te llegaron 15000 pesos por Bre-B", TextToSpeech.QUEUE_FLUSH, null, "test")
+                      hablarPrueba()
                       Aviso.mostrar(this, "Bre-B", "$ 15.000", "Nequi")
                   })
                   contenido.addView(boton("Compartir resumen de hoy", false) {
@@ -1261,7 +1534,7 @@ jobs:
 
               override fun onInit(status: Int) {
                   if (status == TextToSpeech.SUCCESS) {
-                      tts?.language = Locale("es", "CO")
+                      Voz.aplicar(tts, this)
                   }
               }
 
