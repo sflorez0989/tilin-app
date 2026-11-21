@@ -55,8 +55,8 @@ jobs:
                   applicationId "com.tilin.app"
                   minSdk 26
                   targetSdk 34
-                  versionCode 14
-                  versionName "2.3"
+                  versionCode 15
+                  versionName "2.4"
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -149,6 +149,58 @@ jobs:
                   </service>
               </application>
           </manifest>
+          EOF
+          cat > app/src/main/java/com/tilin/app/Apps.kt <<'EOF'
+          package com.tilin.app
+
+          import android.content.Context
+
+          object Apps {
+              private val reg = Regex(
+                  "nequi|bancolombia|daviplata|davivienda|nubank|\\bnu\\b|banco|bbva|ita[uú]|lulo|movii|pibank|rappipay|tpaga|breb|bancoomeva|colpatria|scotiabank|villas|ual[aá]|powwi",
+                  RegexOption.IGNORE_CASE
+              )
+
+              private fun prefs(c: Context) =
+                  c.applicationContext.getSharedPreferences("tilin", Context.MODE_PRIVATE)
+
+              fun esAuto(pkg: String, label: String): Boolean =
+                  reg.containsMatchIn(pkg + " " + label)
+
+              fun extras(c: Context): Set<String> =
+                  (prefs(c).getString("extra", "") ?: "").split("\n").filter { it.isNotBlank() }.toSet()
+
+              fun permitida(c: Context, pkg: String, label: String): Boolean {
+                  if (esAuto(pkg, label)) return true
+                  if (extras(c).contains(pkg)) return true
+                  return prefs(c).getBoolean("todas", false)
+              }
+
+              fun alternar(c: Context, pkg: String) {
+                  val s = extras(c).toMutableSet()
+                  if (s.contains(pkg)) s.remove(pkg) else s.add(pkg)
+                  prefs(c).edit().putString("extra", s.joinToString("\n")).apply()
+              }
+
+              fun registrarVista(c: Context, pkg: String, label: String) {
+                  try {
+                      val p = prefs(c)
+                      val lineas = (p.getString("vistas", "") ?: "").split("\n").filter { it.isNotBlank() }.toMutableList()
+                      lineas.removeAll { it.startsWith(pkg + "|") }
+                      lineas.add(0, pkg + "|" + label.replace("|", " ").replace("\n", " ") + "|" + System.currentTimeMillis())
+                      p.edit().putString("vistas", lineas.take(40).joinToString("\n")).apply()
+                  } catch (e: Exception) { }
+              }
+
+              fun vistas(c: Context): List<Pair<String, String>> {
+                  val r = mutableListOf<Pair<String, String>>()
+                  for (l in (prefs(c).getString("vistas", "") ?: "").split("\n")) {
+                      val p = l.split("|")
+                      if (p.size >= 2 && p[0].isNotBlank()) r.add(Pair(p[0], p[1]))
+                  }
+                  return r
+              }
+          }
           EOF
           cat > app/src/main/java/com/tilin/app/Voz.kt <<'EOF'
           package com.tilin.app
@@ -485,17 +537,21 @@ jobs:
                   "te consignaron", "llegó dinero", "llego dinero",
                   "dinero recibido", "ha llegado", "te enviaron plata",
                   "recarga", "recepción", "recepcion", "bre-b", "bre b",
-                  "abono", "ingreso", "depósito", "deposito"
+                  "abono", "ingreso", "depósito", "deposito",
+                  "recibió", "recibio", "recibido", "transferencia recibida",
+                  "te acreditaron", "acreditado", "te abonaron",
+                  "consignación", "consignacion", "pago recibido", "te giraron"
               )
 
               private val negativas = listOf(
-                  "enviaste", "pagaste", "compraste", "compra ", "retiro",
-                  "retiraste", "gmf", "impuesto", "cobro", "débito", "debito",
-                  "transferiste", "pago de", "pago a "
+                  "enviaste", "pagaste", "compraste", "compra por", "compra en",
+                  "compra de", "retiro", "retiraste", "gmf", "impuesto", "cobro",
+                  "débito", "debito", "transferiste", "pago a ", "pagó a",
+                  "has pagado", "se descontó", "se descontaron"
               )
 
               private val montoRegex =
-                  Regex("""\$\s?(\d{1,3}(?:[.,]\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)""")
+                  Regex("""(?:\$|COP)\s?(\d{1,3}(?:[.,]\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)""", RegexOption.IGNORE_CASE)
 
               private val montoSinSigno =
                   Regex(
@@ -510,12 +566,17 @@ jobs:
                   "Davivienda" to Regex("davivienda", RegexOption.IGNORE_CASE),
                   "Nu" to Regex("\\bnu\\b|nubank", RegexOption.IGNORE_CASE),
                   "BBVA" to Regex("bbva", RegexOption.IGNORE_CASE),
-                  "Banco de Bogotá" to Regex("banco de bogot", RegexOption.IGNORE_CASE),
+                  "Banco de Bogotá" to Regex("banco de bogot|bancodebogota", RegexOption.IGNORE_CASE),
                   "Itaú" to Regex("ita[uú]", RegexOption.IGNORE_CASE),
                   "Banco Popular" to Regex("banco popular", RegexOption.IGNORE_CASE),
-                  "AV Villas" to Regex("av villas", RegexOption.IGNORE_CASE),
+                  "AV Villas" to Regex("av villas|avvillas", RegexOption.IGNORE_CASE),
                   "Banco de Occidente" to Regex("occidente", RegexOption.IGNORE_CASE),
                   "Scotiabank" to Regex("scotiabank|colpatria", RegexOption.IGNORE_CASE),
+                  "Banco Falabella" to Regex("falabella", RegexOption.IGNORE_CASE),
+                  "Banco Caja Social" to Regex("caja social|cajasocial", RegexOption.IGNORE_CASE),
+                  "Bancoomeva" to Regex("bancoomeva", RegexOption.IGNORE_CASE),
+                  "Ualá" to Regex("ual[aá]", RegexOption.IGNORE_CASE),
+                  "Powwi" to Regex("powwi", RegexOption.IGNORE_CASE),
                   "Lulo" to Regex("\\blulo\\b", RegexOption.IGNORE_CASE),
                   "Movii" to Regex("\\bmovii\\b", RegexOption.IGNORE_CASE)
               )
@@ -560,17 +621,30 @@ jobs:
               override fun onNotificationPosted(sbn: StatusBarNotification) {
                   if (sbn.packageName == packageName) return
 
+                  val pkg = sbn.packageName
                   val extras = sbn.notification.extras
                   val titulo = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
                   val cuerpo = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
                       ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
                   val completo = titulo + " " + cuerpo
 
-                  if (!esAppDePagos(sbn.packageName)) return
-
-                  guardarLog(sbn.packageName + ": " + completo)
+                  val app = try {
+                      packageManager.getApplicationLabel(
+                          packageManager.getApplicationInfo(pkg, 0)
+                      ).toString()
+                  } catch (e: Exception) {
+                      pkg
+                  }
 
                   val minuscula = completo.lowercase()
+                  val relevante = montoRegex.containsMatchIn(completo) || palabras.any { minuscula.contains(it) }
+                  if (relevante) Apps.registrarVista(this, pkg, app)
+
+                  if (!Apps.permitida(this, pkg, app)) return
+
+                  val todas = getSharedPreferences("tilin", MODE_PRIVATE).getBoolean("todas", false)
+                  if (!todas || relevante) guardarLog(pkg + ": " + completo)
+
                   if (negativas.any { minuscula.contains(it) }) return
                   if (palabras.none { minuscula.contains(it) }) return
 
@@ -579,15 +653,7 @@ jobs:
                   val crudo = (m1 ?: m2)?.groupValues?.get(1) ?: return
                   val monto = parseMonto(crudo) ?: return
 
-                  val app = try {
-                      packageManager.getApplicationLabel(
-                          packageManager.getApplicationInfo(sbn.packageName, 0)
-                      ).toString()
-                  } catch (e: Exception) {
-                      sbn.packageName
-                  }
-
-                  val origen = sacarOrigen(completo, app, sbn.packageName)
+                  val origen = sacarOrigen(completo, app, pkg)
 
                   val clave = monto.toString() + "|" + origen
                   val ahora = System.currentTimeMillis()
@@ -623,6 +689,14 @@ jobs:
               private fun sacarOrigen(texto: String, app: String, pkg: String): String {
                   val t = texto.lowercase()
                   if (t.contains("bre-b") || t.contains("bre b")) return "Bre-B"
+                  var recibidor = ""
+                  for (b in bancos) {
+                      if (b.second.containsMatchIn(app + " " + pkg)) {
+                          recibidor = b.first
+                          break
+                      }
+                  }
+                  if (recibidor.isNotEmpty() && recibidor != "Nequi") return recibidor
                   var otro = ""
                   for (b in bancos) {
                       if (b.first != "Nequi" && b.second.containsMatchIn(texto)) {
@@ -634,23 +708,11 @@ jobs:
                       return if (otro.isNotEmpty()) "Recarga " + otro else "Recarga"
                   }
                   if (otro.isNotEmpty()) return otro
+                  if (recibidor.isNotEmpty()) return recibidor
                   for (b in bancos) {
                       if (b.second.containsMatchIn(texto)) return b.first
                   }
-                  val p = pkg.lowercase()
-                  for (b in bancos) {
-                      if (p.contains(b.first.lowercase().replace(" ", ""))) return b.first
-                  }
                   return app
-              }
-
-              private fun esAppDePagos(pkg: String): Boolean {
-                  val p = pkg.lowercase()
-                  return listOf(
-                      "nequi", "bancolombia", "daviplata", "davivienda",
-                      "com.nu.", "nubank", "bancodebogota", "bbva", "itau",
-                      "lulo", "movii", "pibank", "rappipay", "tpaga", "breb"
-                  ).any { p.contains(it) }
               }
 
               private fun guardarPago(monto: Long, app: String, nombre: String, banco: String) {
@@ -666,8 +728,8 @@ jobs:
                   val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
                   val actuales = prefs.getString("log", "") ?: ""
                   val lista = actuales.split("\n---\n").filter { it.isNotBlank() }.toMutableList()
-                  lista.add(0, linea)
-                  val recortada = lista.take(15).joinToString("\n---\n")
+                  lista.add(0, linea.take(300))
+                  val recortada = lista.take(25).joinToString("\n---\n")
                   prefs.edit().putString("log", recortada).apply()
               }
 
@@ -1299,6 +1361,41 @@ jobs:
                           Toast.makeText(this, "Busca Texto a voz en los Ajustes del sistema", Toast.LENGTH_LONG).show()
                       }
                   })
+
+                  seccion("Apps que Rovika lee")
+
+                  val todas = prefs.getBoolean("todas", false)
+                  fila("Qué apps lee", listOf("Bancos y las que actives", "Todas las apps"), if (todas) 1 else 0) { i ->
+                      prefs.edit().putBoolean("todas", i == 1).apply()
+                      dibujar()
+                  }
+                  val nota2 = tarjeta(Color.parseColor("#0B2A33"), cian)
+                  nota2.addView(texto("Rovika ya lee Nequi, Bancolombia, Daviplata, Davivienda, Nu, BBVA y otros bancos. Si tu app de pagos no sale abajo como automática, actívala cuando te llegue una notificación. Todas las apps lee cualquier app con frases de pago, pero puede confundirse con mensajes de WhatsApp.", 13f, gris))
+                  contenido.addView(nota2)
+
+                  val vistas = Apps.vistas(this)
+                  val activadas = Apps.extras(this)
+                  if (vistas.isEmpty()) {
+                      contenido.addView(texto("Aún no hay apps vistas. Cuando llegue una notificación de pago, aparecerá aquí.", 13f, gris))
+                  } else {
+                      for (vv in vistas) {
+                          val pk = vv.first
+                          val nom = vv.second
+                          val tarj = tarjeta(panel)
+                          tarj.addView(texto(nom, 16f, Color.WHITE, true))
+                          tarj.addView(texto(pk, 11f, gris))
+                          if (Apps.esAuto(pk, nom)) {
+                              tarj.addView(texto("✔ Lectura automática", 13f, verde, true))
+                          } else {
+                              val on = activadas.contains(pk)
+                              tarj.addView(boton(if (on) "Activada ✔ (toca para quitar)" else "Activar lectura", on) {
+                                  Apps.alternar(this, pk)
+                                  dibujar()
+                              })
+                          }
+                          contenido.addView(tarj)
+                      }
+                  }
 
                   val h3 = texto("Diagnóstico del aviso", 13f, gris, true)
                   h3.setPadding(0, dp(14), 0, dp(6))
