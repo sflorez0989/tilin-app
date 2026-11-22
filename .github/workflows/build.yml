@@ -55,8 +55,8 @@ jobs:
                   applicationId "com.tilin.app"
                   minSdk 26
                   targetSdk 34
-                  versionCode 15
-                  versionName "2.4"
+                  versionCode 16
+                  versionName "2.5"
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -826,6 +826,8 @@ jobs:
               private lateinit var tabMov: TextView
               private lateinit var tabAj: TextView
               private var pestana = 0
+              private var abierta = -1
+              private var logAbierto = false
               private var diaPintado = ""
               private var ultimoTotal = 0L
               private var filtro = ""
@@ -864,6 +866,16 @@ jobs:
                   return g
               }
 
+              private fun heroFondo(): GradientDrawable {
+                  val g = GradientDrawable(
+                      GradientDrawable.Orientation.TL_BR,
+                      intArrayOf(Color.parseColor("#14327A"), Color.parseColor("#0B2A33"))
+                  )
+                  g.cornerRadius = dp(26).toFloat()
+                  g.setStroke(dp(1), azul)
+                  return g
+              }
+
               private fun texto(t: String, size: Float, color: Int, bold: Boolean = false): TextView {
                   val v = TextView(this)
                   v.text = t
@@ -899,6 +911,31 @@ jobs:
                   return b
               }
 
+              private fun botonPeq(t: String, lleno: Boolean, accion: () -> Unit): Button {
+                  val b = Button(this)
+                  b.text = t
+                  b.isAllCaps = false
+                  b.textSize = 14f
+                  b.setTypeface(null, Typeface.BOLD)
+                  b.setTextColor(if (lleno) Color.WHITE else cian)
+                  b.background = if (lleno) degradado() else caja(Color.TRANSPARENT, 16, cian)
+                  b.setOnClickListener { accion() }
+                  val p = LinearLayout.LayoutParams(0, dp(50), 1f)
+                  p.setMargins(dp(4), 0, dp(4), 0)
+                  b.layoutParams = p
+                  return b
+              }
+
+              private fun filaBotones(vararg bs: Button) {
+                  val f = LinearLayout(this)
+                  f.orientation = LinearLayout.HORIZONTAL
+                  val lp = LinearLayout.LayoutParams(-1, -2)
+                  lp.setMargins(0, 0, 0, dp(10))
+                  f.layoutParams = lp
+                  for (b in bs) f.addView(b)
+                  contenido.addView(f)
+              }
+
               private fun botonMini(t: String, accion: () -> Unit): Button {
                   val b = Button(this)
                   b.text = t
@@ -912,10 +949,25 @@ jobs:
                   return b
               }
 
-              private fun seccion(t: String) {
-                  val v = texto(t, 18f, Color.WHITE, true)
-                  v.setPadding(0, dp(14), 0, dp(10))
-                  contenido.addView(v)
+              private fun encabezado(icono: String, titulo: String, resumen: String, abiertoAhora: Boolean, alTocar: () -> Unit) {
+                  val t = tarjeta(panel, if (abiertoAhora) cian else borde)
+                  t.setPadding(dp(18), dp(14), dp(18), dp(14))
+                  val fila = LinearLayout(this)
+                  fila.orientation = LinearLayout.HORIZONTAL
+                  fila.gravity = Gravity.CENTER_VERTICAL
+                  val ic = texto(icono, 24f, Color.WHITE)
+                  ic.setPadding(0, 0, dp(14), 0)
+                  fila.addView(ic)
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                  col.addView(texto(titulo, 17f, Color.WHITE, true))
+                  col.addView(texto(resumen, 12f, gris))
+                  fila.addView(col)
+                  fila.addView(texto(if (abiertoAhora) "▴" else "▾", 20f, cian, true))
+                  t.addView(fila)
+                  t.setOnClickListener { alTocar() }
+                  contenido.addView(t)
               }
 
               private fun fila(titulo: String, etiquetas: List<String>, actual: Int, elegir: (Int) -> Unit) {
@@ -1156,12 +1208,12 @@ jobs:
                   barra.setBackgroundColor(Color.parseColor("#0A1020"))
                   barra.layoutParams = LinearLayout.LayoutParams(-1, -2)
 
-                  tabInicio = texto("Inicio", 16f, cian, true)
-                  tabMov = texto("Movimientos", 16f, gris, true)
-                  tabAj = texto("Ajustes", 16f, gris, true)
+                  tabInicio = texto("🏠\nInicio", 12f, cian, true)
+                  tabMov = texto("📋\nMovimientos", 12f, gris, true)
+                  tabAj = texto("⚙️\nAjustes", 12f, gris, true)
                   for (t in listOf(tabInicio, tabMov, tabAj)) {
                       t.gravity = Gravity.CENTER
-                      t.layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f)
+                      t.layoutParams = LinearLayout.LayoutParams(0, dp(60), 1f)
                       barra.addView(t)
                   }
                   tabInicio.setOnClickListener { pestana = 0; scroll.scrollTo(0, 0); dibujar() }
@@ -1223,17 +1275,105 @@ jobs:
                       .show()
               }
 
+              private fun filaApp(pk: String, nom: String, activadas: Set<String>): LinearLayout {
+                  val f = LinearLayout(this)
+                  f.orientation = LinearLayout.HORIZONTAL
+                  f.gravity = Gravity.CENTER_VERTICAL
+                  f.setPadding(0, dp(8), 0, dp(8))
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                  col.addView(texto(nom, 15f, Color.WHITE, true))
+                  col.addView(texto(pk, 11f, gris))
+                  f.addView(col)
+                  if (Apps.esAuto(pk, nom)) {
+                      f.addView(texto("✔ Automática", 12f, verde, true))
+                  } else {
+                      val on = activadas.contains(pk)
+                      val b = Button(this)
+                      b.text = if (on) "Activada ✔" else "Activar"
+                      b.isAllCaps = false
+                      b.textSize = 13f
+                      b.setTypeface(null, Typeface.BOLD)
+                      b.setTextColor(if (on) Color.WHITE else cian)
+                      b.background = if (on) degradado() else caja(Color.TRANSPARENT, 14, cian)
+                      b.layoutParams = LinearLayout.LayoutParams(dp(112), dp(40))
+                      b.setOnClickListener {
+                          Apps.alternar(this, pk)
+                          dibujar()
+                      }
+                      f.addView(b)
+                  }
+                  return f
+              }
+
               private fun dibujarAjustes() {
                   val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
                   val estilo = prefs.getString("estilo", "letrero") ?: "letrero"
                   val letrero = estilo == "letrero"
 
                   contenido.addView(texto("Ajustes", 28f, Color.WHITE, true))
-                  val sub = texto("Personaliza tu Rovika", 15f, cian)
-                  sub.setPadding(0, dp(2), 0, dp(6))
+                  val sub = texto("Toca una sección para abrirla", 14f, cian)
+                  sub.setPadding(0, dp(2), 0, dp(14))
                   contenido.addView(sub)
 
-                  seccion("Aviso en pantalla")
+                  val dur = prefs.getInt("dur", 6)
+                  encabezado(
+                      "🔔", "Aviso en pantalla",
+                      (if (letrero) "Letrero propio" else "Emergente del sistema") + " · " + dur + " seg",
+                      abierta == 0
+                  ) {
+                      abierta = if (abierta == 0) -1 else 0
+                      dibujar()
+                  }
+                  if (abierta == 0) ajusteAviso(letrero)
+
+                  val frases = listOf("Normal", "Tilín", "Corta", "Alegre")
+                  val fr = frases[prefs.getInt("frase", 0).coerceIn(0, 3)]
+                  encabezado(
+                      "🎙", "Voz",
+                      "Frase " + fr + " · tono " + prefs.getInt("tono", 100) + "% · velocidad " + prefs.getInt("vel", 100) + "%",
+                      abierta == 1
+                  ) {
+                      abierta = if (abierta == 1) -1 else 1
+                      dibujar()
+                  }
+                  if (abierta == 1) ajusteVoz()
+
+                  val todas = prefs.getBoolean("todas", false)
+                  val nExtra = Apps.extras(this).size
+                  encabezado(
+                      "🏦", "Apps que Rovika lee",
+                      if (todas) "Todas las apps" else "Bancos automáticos + " + nExtra + " activadas",
+                      abierta == 2
+                  ) {
+                      abierta = if (abierta == 2) -1 else 2
+                      dibujar()
+                  }
+                  if (abierta == 2) ajusteApps()
+
+                  val dg = prefs.getString("diag", "") ?: ""
+                  encabezado(
+                      "🛠", "Diagnóstico",
+                      if (dg.isBlank()) "Aún no hay avisos" else dg.take(46),
+                      abierta == 3
+                  ) {
+                      abierta = if (abierta == 3) -1 else 3
+                      dibujar()
+                  }
+                  if (abierta == 3) {
+                      val t = tarjeta(panel)
+                      t.addView(texto("Último aviso", 13f, gris, true))
+                      val dv = texto(if (dg.isBlank()) "Aún no se ha mostrado ningún aviso." else dg, 12f, ambar)
+                      dv.setTextIsSelectable(true)
+                      t.addView(dv)
+                      t.addView(texto("Rovika versión 2.5", 12f, gris))
+                      contenido.addView(t)
+                  }
+              }
+
+              private fun ajusteAviso(letrero: Boolean) {
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
 
                   fila("Estilo del aviso", listOf("Emergente del sistema", "Letrero propio"), if (letrero) 1 else 0) { i ->
                       prefs.edit().putString("estilo", if (i == 1) "letrero" else "sistema").apply()
@@ -1290,8 +1430,10 @@ jobs:
                   contenido.addView(boton("Probar aviso ahora", true) {
                       Aviso.mostrar(this, "Bre-B", "$ 15.000", "Nequi")
                   })
+              }
 
-                  seccion("Voz")
+              private fun ajusteVoz() {
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
 
                   fila("Frase que dice", listOf("Normal", "Tilín", "Corta", "Alegre"), prefs.getInt("frase", 0)) { i ->
                       prefs.edit().putInt("frase", i).apply()
@@ -1322,10 +1464,19 @@ jobs:
                   tv.addView(texto("Voz del aviso", 14f, gris))
                   val opciones = mutableListOf<Pair<String, String>>()
                   opciones.add(Pair("Automática", ""))
-                  var n = 1
+                  val contadores = HashMap<String, Int>()
                   for (v in voces.take(8)) {
-                      opciones.add(Pair("Voz " + n + " (" + v.locale.toString() + ")", v.name))
-                      n += 1
+                      val reg = when (v.locale.country) {
+                          "ES" -> "España"
+                          "US" -> "Latinoamérica"
+                          "MX" -> "México"
+                          "CO" -> "Colombia"
+                          "AR" -> "Argentina"
+                          else -> v.locale.country
+                      }
+                      val k = (contadores[reg] ?: 0) + 1
+                      contadores[reg] = k
+                      opciones.add(Pair("Voz de " + reg + " " + k, v.name))
                   }
                   for (op in opciones) {
                       val b = Button(this)
@@ -1336,7 +1487,7 @@ jobs:
                       val seleccionada = op.second == nombreActual
                       b.setTextColor(if (seleccionada) Color.WHITE else cian)
                       b.background = if (seleccionada) degradado() else caja(Color.TRANSPARENT, 14, borde)
-                      val p = LinearLayout.LayoutParams(-1, dp(44))
+                      val p = LinearLayout.LayoutParams(-1, dp(42))
                       p.setMargins(0, dp(8), 0, 0)
                       b.layoutParams = p
                       b.setOnClickListener {
@@ -1361,49 +1512,41 @@ jobs:
                           Toast.makeText(this, "Busca Texto a voz en los Ajustes del sistema", Toast.LENGTH_LONG).show()
                       }
                   })
+              }
 
-                  seccion("Apps que Rovika lee")
-
+              private fun ajusteApps() {
+                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
                   val todas = prefs.getBoolean("todas", false)
+                  val activos = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
+                  val activo = activos.contains(packageName)
+
                   fila("Qué apps lee", listOf("Bancos y las que actives", "Todas las apps"), if (todas) 1 else 0) { i ->
                       prefs.edit().putBoolean("todas", i == 1).apply()
                       dibujar()
                   }
-                  val nota2 = tarjeta(Color.parseColor("#0B2A33"), cian)
-                  nota2.addView(texto("Rovika ya lee Nequi, Bancolombia, Daviplata, Davivienda, Nu, BBVA y otros bancos. Si tu app de pagos no sale abajo como automática, actívala cuando te llegue una notificación. Todas las apps lee cualquier app con frases de pago, pero puede confundirse con mensajes de WhatsApp.", 13f, gris))
-                  contenido.addView(nota2)
+
+                  val nota = tarjeta(Color.parseColor("#0B2A33"), cian)
+                  nota.addView(texto("Aquí salen las apps que mandaron una notificación con pinta de pago. Los bancos (Nequi, Bancolombia, Daviplata, Davivienda, Nu, BBVA...) se leen solos. Si sale otra app, como WhatsApp, déjala apagada: Rovika no la contará como pago. Actívala solo si es tu banco y no se reconoció solo.", 13f, gris))
+                  contenido.addView(nota)
 
                   val vistas = Apps.vistas(this)
                   val activadas = Apps.extras(this)
+                  val lista = tarjeta(panel)
+                  lista.addView(texto("Apps vistas", 14f, gris))
                   if (vistas.isEmpty()) {
-                      contenido.addView(texto("Aún no hay apps vistas. Cuando llegue una notificación de pago, aparecerá aquí.", 13f, gris))
+                      val vacio = texto("Aún no hay apps vistas. Cuando llegue una notificación de pago, aparecerá aquí.", 13f, gris)
+                      vacio.setPadding(0, dp(8), 0, 0)
+                      lista.addView(vacio)
                   } else {
-                      for (vv in vistas) {
-                          val pk = vv.first
-                          val nom = vv.second
-                          val tarj = tarjeta(panel)
-                          tarj.addView(texto(nom, 16f, Color.WHITE, true))
-                          tarj.addView(texto(pk, 11f, gris))
-                          if (Apps.esAuto(pk, nom)) {
-                              tarj.addView(texto("✔ Lectura automática", 13f, verde, true))
-                          } else {
-                              val on = activadas.contains(pk)
-                              tarj.addView(boton(if (on) "Activada ✔ (toca para quitar)" else "Activar lectura", on) {
-                                  Apps.alternar(this, pk)
-                                  dibujar()
-                              })
-                          }
-                          contenido.addView(tarj)
-                      }
+                      for (vv in vistas) lista.addView(filaApp(vv.first, vv.second, activadas))
                   }
+                  contenido.addView(lista)
 
-                  val h3 = texto("Diagnóstico del aviso", 13f, gris, true)
-                  h3.setPadding(0, dp(14), 0, dp(6))
-                  contenido.addView(h3)
-                  val dg = prefs.getString("diag", "") ?: ""
-                  val dv = texto(if (dg.isBlank()) "Aún no se ha mostrado ningún aviso." else dg, 12f, ambar)
-                  dv.setTextIsSelectable(true)
-                  contenido.addView(dv)
+                  if (activo) {
+                      contenido.addView(boton("Permisos de lectura de notificaciones", false) {
+                          startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                      })
+                  }
               }
 
               private fun dibujarInicio() {
@@ -1411,23 +1554,35 @@ jobs:
                   val activo = activos.contains(packageName)
                   val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
 
-                  val titulo = texto("ROVIKA", 30f, Color.WHITE, true)
+                  val cab = LinearLayout(this)
+                  cab.orientation = LinearLayout.HORIZONTAL
+                  cab.gravity = Gravity.CENTER_VERTICAL
+                  val cl = LinearLayout.LayoutParams(-1, -2)
+                  cl.setMargins(0, 0, 0, dp(18))
+                  cab.layoutParams = cl
+                  val colT = LinearLayout(this)
+                  colT.orientation = LinearLayout.VERTICAL
+                  colT.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                  val titulo = texto("ROVIKA", 28f, Color.WHITE, true)
                   titulo.letterSpacing = 0.25f
-                  contenido.addView(titulo)
-                  val sub = texto("Tus pagos, en voz alta", 15f, cian)
-                  sub.setPadding(0, dp(2), 0, dp(20))
-                  contenido.addView(sub)
+                  colT.addView(titulo)
+                  colT.addView(texto("Tus pagos, en voz alta", 14f, cian))
+                  cab.addView(colT)
+                  val pill = texto(if (activo) "● Activo" else "● Sin permiso", 13f, if (activo) verde else ambar, true)
+                  pill.setPadding(dp(14), dp(8), dp(14), dp(8))
+                  pill.background = caja(
+                      if (activo) Color.parseColor("#0B2A33") else Color.parseColor("#3A2A12"),
+                      20,
+                      if (activo) cian else ambar
+                  )
+                  cab.addView(pill)
+                  contenido.addView(cab)
 
-                  val estado = tarjeta(if (activo) Color.parseColor("#0B2A33") else Color.parseColor("#3A2A12"),
-                      if (activo) cian else ambar)
-                  estado.addView(texto(
-                      if (activo) "● Activo y escuchando" else "● Falta el permiso",
-                      17f, if (activo) cian else ambar, true))
-                  estado.addView(texto(
-                      if (activo) "Rovika te avisará cuando llegue un pago."
-                      else "Toca el botón de abajo y activa Rovika en la lista.",
-                      14f, gris))
-                  contenido.addView(estado)
+                  if (!activo) {
+                      contenido.addView(boton("Dar permiso de notificaciones", true) {
+                          startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                      })
+                  }
 
                   val hoy = hoyStr()
                   val dia = SimpleDateFormat("yyyyMMdd", Locale.US)
@@ -1435,13 +1590,29 @@ jobs:
                   val todos = leerPagos()
                   val pagos = todos.filter { dia.format(Date(it.ts)) == hoy }
                   val total = pagos.fold(0L) { a, p -> a + p.monto }
+                  val meta = prefs.getLong("meta", 150000L)
+                  val pct = (total * 100L / meta).coerceAtMost(100L).toInt()
 
-                  val tTotal = tarjeta(panel, azul)
-                  tTotal.addView(texto("Hoy llevas", 14f, gris))
-                  val tvTotal = texto("$ " + Aviso.fmt(total), 42f, Color.WHITE, true)
-                  tTotal.addView(tvTotal)
-                  tTotal.addView(texto(pagos.size.toString() + " pagos", 14f, verde, true))
-                  contenido.addView(tTotal)
+                  val hero = LinearLayout(this)
+                  hero.orientation = LinearLayout.VERTICAL
+                  hero.background = heroFondo()
+                  hero.setPadding(dp(22), dp(20), dp(22), dp(20))
+                  val hp = LinearLayout.LayoutParams(-1, -2)
+                  hp.setMargins(0, 0, 0, dp(12))
+                  hero.layoutParams = hp
+                  hero.addView(texto("Hoy llevas", 14f, Color.parseColor("#B8C7E6")))
+                  val tvTotal = texto("$ " + Aviso.fmt(total), 44f, Color.WHITE, true)
+                  hero.addView(tvTotal)
+                  val chips = LinearLayout(this)
+                  chips.orientation = LinearLayout.HORIZONTAL
+                  chips.addView(texto(pagos.size.toString() + (if (pagos.size == 1) " pago" else " pagos"), 14f, verde, true))
+                  chips.addView(texto("   ·   ", 14f, gris))
+                  chips.addView(texto(
+                      if (pct >= 100) "🎉 Meta cumplida" else pct.toString() + "% de la meta",
+                      14f, if (pct >= 100) verde else cian, true
+                  ))
+                  hero.addView(chips)
+                  contenido.addView(hero)
 
                   val desde = ultimoTotal
                   ultimoTotal = total
@@ -1454,8 +1625,6 @@ jobs:
                       a.start()
                   }
 
-                  val meta = prefs.getLong("meta", 150000L)
-                  val pct = (total * 100L / meta).coerceAtMost(100L).toInt()
                   val tMeta = tarjeta(panel)
                   tMeta.setOnClickListener { pedirMeta() }
                   tMeta.addView(texto("Meta del día", 14f, gris))
@@ -1474,9 +1643,7 @@ jobs:
                       pista.addView(rell)
                   }
                   tMeta.addView(pista)
-                  tMeta.addView(texto(
-                      if (pct >= 100) "🎉 ¡Meta cumplida!" else pct.toString() + "% · toca para cambiar la meta",
-                      12f, if (pct >= 100) verde else gris))
+                  tMeta.addView(texto("Toca para cambiar la meta", 12f, gris))
                   contenido.addView(tMeta)
 
                   val vals = mutableListOf<Long>()
@@ -1504,58 +1671,59 @@ jobs:
                   tSem.addView(grafica)
                   contenido.addView(tSem)
 
-                  if (!activo) {
-                      contenido.addView(boton("Dar permiso de notificaciones", true) {
-                          startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                      })
-                  }
-                  contenido.addView(boton("Probar voz y aviso", activo) {
-                      hablarPrueba()
-                      Aviso.mostrar(this, "Bre-B", "$ 15.000", "Nequi")
-                  })
-                  contenido.addView(boton("Compartir resumen de hoy", false) {
-                      compartir(resumenHoy())
-                  })
-                  if (activo) {
-                      contenido.addView(boton("Permisos de notificaciones", false) {
-                          startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                      })
-                  }
+                  filaBotones(
+                      botonPeq("🔊 Probar aviso", activo) {
+                          hablarPrueba()
+                          Aviso.mostrar(this, "Bre-B", "$ 15.000", "Nequi")
+                      },
+                      botonPeq("📤 Compartir resumen", false) {
+                          compartir(resumenHoy())
+                      }
+                  )
 
                   val h1 = texto("Pagos de hoy", 18f, Color.WHITE, true)
-                  h1.setPadding(0, dp(14), 0, dp(10))
+                  h1.setPadding(0, dp(10), 0, dp(10))
                   contenido.addView(h1)
 
                   if (pagos.isEmpty()) {
-                      contenido.addView(texto("Aún no hay pagos hoy.", 14f, gris))
+                      val vacio = texto("Aún no hay pagos hoy.", 14f, gris)
+                      vacio.setPadding(0, 0, 0, dp(14))
+                      contenido.addView(vacio)
                   } else {
                       for (p in pagos) contenido.addView(filaPago(p, hora))
                   }
 
-                  val h2 = texto("Últimas notificaciones de apps de pagos", 13f, gris, true)
-                  h2.setPadding(0, dp(20), 0, dp(6))
-                  contenido.addView(h2)
-                  val log = prefs.getString("log", "") ?: ""
-                  val lv = texto(if (log.isBlank()) "Todavía no hay notificaciones." else log, 11f, Color.parseColor("#5B6781"))
-                  lv.setTextIsSelectable(true)
-                  contenido.addView(lv)
+                  encabezado("🧾", "Registro de notificaciones", "Lo último que Rovika vio de tus bancos", logAbierto) {
+                      logAbierto = !logAbierto
+                      dibujar()
+                  }
+                  if (logAbierto) {
+                      val log = prefs.getString("log", "") ?: ""
+                      val t = tarjeta(panel)
+                      val lv = texto(if (log.isBlank()) "Todavía no hay notificaciones." else log, 11f, Color.parseColor("#7C89A3"))
+                      lv.setTextIsSelectable(true)
+                      t.addView(lv)
+                      contenido.addView(t)
+                  }
               }
 
               private fun dibujarMov() {
                   contenido.addView(texto("Movimientos", 28f, Color.WHITE, true))
-                  val sub = texto("Pagos por día", 15f, cian)
+                  val sub = texto("Pagos por día", 14f, cian)
                   sub.setPadding(0, dp(2), 0, dp(14))
                   contenido.addView(sub)
 
-                  contenido.addView(boton("Guardar copia de seguridad", false) {
-                      val datos = getSharedPreferences("tilin", MODE_PRIVATE).getString("pagos", "") ?: ""
-                      if (datos.isBlank()) {
-                          Toast.makeText(this, "Aún no hay movimientos para guardar", Toast.LENGTH_LONG).show()
-                      } else {
-                          compartir(datos)
-                      }
-                  })
-                  contenido.addView(boton("Restaurar copia", false) { pedirRestaurar() })
+                  filaBotones(
+                      botonPeq("💾 Guardar copia", false) {
+                          val datos = getSharedPreferences("tilin", MODE_PRIVATE).getString("pagos", "") ?: ""
+                          if (datos.isBlank()) {
+                              Toast.makeText(this, "Aún no hay movimientos para guardar", Toast.LENGTH_LONG).show()
+                          } else {
+                              compartir(datos)
+                          }
+                      },
+                      botonPeq("📥 Restaurar copia", false) { pedirRestaurar() }
+                  )
 
                   val et = EditText(this)
                   et.hint = "Buscar por banco o valor"
