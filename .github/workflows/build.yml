@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     env:
-      VERSION_NAME: "2.6"
+      VERSION_NAME: "2.7"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -22,7 +22,7 @@ jobs:
           gradle-version: 8.7
       - name: Crear archivos de la app
         run: |
-          VC=$((100 + ${{ github.run_number }}))
+          VC=$((100 + GITHUB_RUN_NUMBER))
           mkdir -p app/src/main/java/com/tilin/app
           mkdir -p app/src/main/res/mipmap-anydpi-v26
           mkdir -p app/src/main/res/drawable
@@ -37,11 +37,11 @@ jobs:
           # Rovika - notas del proyecto
 
           ## Que es
-          App Android que lee las notificaciones de pago (Nequi, Bancolombia, Daviplata, Davivienda, Nu, BBVA y otros), las dice en voz alta y lleva la cuenta del dia. Todo se guarda solo en el telefono: la app no tiene permiso de internet.
+          App Android que lee las notificaciones de pago (Nequi, Bancolombia, Daviplata, Davivienda, Nu, BBVA y otros), las dice en voz alta y lleva la cuenta del dia. Los pagos se guardan solo en el telefono. La app usa internet unicamente para buscar nuevas versiones en GitHub Releases.
 
           ## Donde esta todo
           - Este repositorio de GitHub guarda el codigo. El archivo .github/workflows/build.yml crea todos los archivos de la app y GitHub arma el APK.
-          - La carpeta app/src/main/java/com/tilin/app tiene el codigo: MainActivity (pantallas y tutorial), PagoListenerService (lee notificaciones), Aviso (letrero), Voz y Apps.
+          - La carpeta app/src/main/java/com/tilin/app tiene el codigo: MainActivity (pantallas y tutorial), PagoListenerService (lee notificaciones), Aviso (letrero), Voz, Apps y Actualizar (avisos de nueva version).
           - rovika.keystore es la firma fija. NO la borres: gracias a ella cada version nueva se instala encima de la anterior sin perder datos.
           - La pestana Releases tiene cada version lista para descargar. Link fijo de la ultima: https://github.com/sflorez0989/tilin-app/releases/latest/download/Rovika.apk
 
@@ -49,13 +49,20 @@ jobs:
           1. Editar .github/workflows/build.yml (o pedirle a Claude el codigo completo y pegarlo).
           2. Subir VERSION_NAME arriba en el archivo.
           3. Confirmar cambios y esperar el check verde en Actions.
-          4. Descargar Rovika.apk desde Releases e instalar encima.
+          4. GitHub crea el release solo. Quien ya tiene la app recibe el aviso de actualizacion (maximo 12 horas) y la instala encima.
+
+          ## Como funcionan las actualizaciones
+          - El numero de version interno es 100 mas el numero de ejecucion de Actions. El release se llama v VERSION-bNUMERO y la app compara ese numero con el suyo.
+          - La app consulta https://api.github.com/repos/sflorez0989/tilin-app/releases/latest cada 12 horas (al abrirse y desde el servicio que lee notificaciones).
+          - Android no permite instalar en silencio: la persona toca la notificacion, descarga el APK y toca Instalar.
+          - El repositorio debe ser publico para que esto funcione.
 
           ## Reglas para no danar la app
           - Un cambio a la vez y probar antes del siguiente.
           - Si una compilacion sale en rojo, la app instalada sigue funcionando. Mandar captura del error.
           - Para volver atras: en GitHub abrir el historial (History) de build.yml y copiar una version anterior.
           - No cambiar versiones de herramientas (Gradle 8.7, AGP 8.5.2, Kotlin 1.9.24, Java 17, ubuntu-24.04) sin necesidad.
+          - Limite de GitHub: el bloque run que crea los archivos no puede llevar expresiones dobles llave (de GitHub) porque pasaria el limite de 21000 caracteres. Por eso el numero de version se lee con la variable GITHUB_RUN_NUMBER.
 
           ## Como lee los pagos (textos reales vistos)
           - Nequi por QR o Bre-B: Te enviaron plata por Bre-B Te enviaron $17.000. Entra a tu app y revisa tu saldo.
@@ -78,7 +85,7 @@ jobs:
           - Exportar a Excel
           - Probar Bancolombia, Nu y Davivienda con notificaciones reales
           - iPhone: Apple no permite leer notificaciones de otras apps, solo seria por correo
-          - Antes de vender: pasar el repositorio a privado y publicar en Google Play
+          - Antes de vender: pasar el repositorio a privado (cambia el sistema de actualizaciones) y publicar en Google Play
           EOF
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -198,6 +205,7 @@ jobs:
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
               <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.INTERNET" />
               <application
                   android:icon="@mipmap/ic_launcher"
                   android:roundIcon="@mipmap/ic_launcher_round"
@@ -222,6 +230,130 @@ jobs:
                   </service>
               </application>
           </manifest>
+          EOF
+          cat > app/src/main/java/com/tilin/app/Actualizar.kt <<'EOF'
+          package com.tilin.app
+
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.content.Context
+          import android.content.Intent
+          import android.graphics.Color
+          import android.net.Uri
+          import android.os.Build
+          import org.json.JSONObject
+          import java.net.HttpURLConnection
+          import java.net.URL
+
+          class Nueva(val nombre: String, val codigo: Long)
+
+          object Actualizar {
+              const val API = "https://api.github.com/repos/sflorez0989/tilin-app/releases/latest"
+              const val APK = "https://github.com/sflorez0989/tilin-app/releases/latest/download/Rovika.apk"
+              private const val CANAL = "actualizaciones"
+              private const val CADA = 12L * 3600L * 1000L
+
+              private fun prefs(c: Context) =
+                  c.applicationContext.getSharedPreferences("tilin", Context.MODE_PRIVATE)
+
+              @Suppress("DEPRECATION")
+              fun codigoActual(c: Context): Long {
+                  return try {
+                      val i = c.packageManager.getPackageInfo(c.packageName, 0)
+                      if (Build.VERSION.SDK_INT >= 28) i.longVersionCode else i.versionCode.toLong()
+                  } catch (e: Exception) {
+                      0L
+                  }
+              }
+
+              fun hayNueva(c: Context): Boolean =
+                  prefs(c).getLong("updCodigo", 0L) > codigoActual(c)
+
+              private fun consultar(): Nueva? {
+                  var con: HttpURLConnection? = null
+                  try {
+                      con = URL(API).openConnection() as HttpURLConnection
+                      con.connectTimeout = 8000
+                      con.readTimeout = 8000
+                      con.setRequestProperty("Accept", "application/vnd.github+json")
+                      con.setRequestProperty("User-Agent", "Rovika")
+                      if (con.responseCode != 200) return null
+                      val txt = con.inputStream.bufferedReader().use { it.readText() }
+                      val j = JSONObject(txt)
+                      val tag = j.optString("tag_name", "")
+                      val nombre = j.optString("name", tag)
+                      val m = Regex("-b(\\d+)$").find(tag) ?: return null
+                      val codigo = 100L + m.groupValues[1].toLong()
+                      return Nueva(nombre, codigo)
+                  } catch (e: Exception) {
+                      return null
+                  } finally {
+                      try {
+                          con?.disconnect()
+                      } catch (e: Exception) { }
+                  }
+              }
+
+              fun revisarSiToca(c: Context, alTerminar: (() -> Unit)? = null) {
+                  val app = c.applicationContext
+                  val p = prefs(app)
+                  val ahora = System.currentTimeMillis()
+                  if (ahora - p.getLong("updUltimo", 0L) < CADA) return
+                  p.edit().putLong("updUltimo", ahora).apply()
+                  Thread {
+                      revisarAhora(app, true)
+                      alTerminar?.invoke()
+                  }.start()
+              }
+
+              fun revisarAhora(c: Context, avisar: Boolean): Int {
+                  val app = c.applicationContext
+                  val n = consultar() ?: return -1
+                  val p = prefs(app)
+                  p.edit()
+                      .putLong("updUltimo", System.currentTimeMillis())
+                      .putLong("updCodigo", n.codigo)
+                      .putString("updNombre", n.nombre)
+                      .apply()
+                  if (n.codigo > codigoActual(app)) {
+                      if (avisar && p.getLong("updAvisado", 0L) < n.codigo) {
+                          notificar(app, n.nombre)
+                          p.edit().putLong("updAvisado", n.codigo).apply()
+                      }
+                      return 1
+                  }
+                  return 0
+              }
+
+              private fun notificar(c: Context, nombre: String) {
+                  try {
+                      val nm = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                      if (nm.getNotificationChannel(CANAL) == null) {
+                          val ch = NotificationChannel(CANAL, "Actualizaciones", NotificationManager.IMPORTANCE_DEFAULT)
+                          ch.description = "Avisa cuando hay una nueva versión de Rovika"
+                          nm.createNotificationChannel(ch)
+                      }
+                      if (!nm.areNotificationsEnabled()) return
+                      val i = Intent(Intent.ACTION_VIEW, Uri.parse(APK))
+                      i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                      val abrir = PendingIntent.getActivity(
+                          c, 1, i,
+                          PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                      )
+                      val n = Notification.Builder(c, CANAL)
+                          .setSmallIcon(R.drawable.ic_notif)
+                          .setContentTitle("Hay una nueva versión de Rovika")
+                          .setContentText(nombre + " · toca para descargar e instalar")
+                          .setColor(Color.parseColor("#22D3EE"))
+                          .setAutoCancel(true)
+                          .setContentIntent(abrir)
+                          .build()
+                      nm.notify(1002, n)
+                  } catch (e: Exception) { }
+              }
+          }
           EOF
           cat > app/src/main/java/com/tilin/app/Apps.kt <<'EOF'
           package com.tilin.app
@@ -659,6 +791,11 @@ jobs:
                   tts = TextToSpeech(this, this)
               }
 
+              override fun onListenerConnected() {
+                  super.onListenerConnected()
+                  Actualizar.revisarSiToca(this)
+              }
+
               override fun onInit(status: Int) {
                   if (status == TextToSpeech.SUCCESS) {
                       Voz.aplicar(tts, this)
@@ -693,6 +830,8 @@ jobs:
 
               override fun onNotificationPosted(sbn: StatusBarNotification) {
                   if (sbn.packageName == packageName) return
+
+                  Actualizar.revisarSiToca(this)
 
                   val pkg = sbn.packageName
                   val extras = sbn.notification.extras
@@ -1311,6 +1450,11 @@ jobs:
                   dibujar()
                   h.removeCallbacks(tic)
                   h.postDelayed(tic, 30000)
+                  Actualizar.revisarSiToca(this) {
+                      h.post {
+                          if (!isFinishing && !isDestroyed && tutPaso < 0 && Actualizar.hayNueva(this)) dibujar()
+                      }
+                  }
               }
 
               override fun onPause() {
@@ -1417,7 +1561,7 @@ jobs:
                   } else if (paso == 1) {
                       val t = tarjetaPaso(
                           "🔔", "Permiso para leer notificaciones",
-                          "Así se entera Rovika de tus pagos. Solo toma en cuenta las notificaciones de apps de pagos, y todo se guarda únicamente en tu teléfono: Rovika no tiene permiso de internet."
+                          "Así se entera Rovika de tus pagos. Solo toma en cuenta las notificaciones de apps de pagos. Tus pagos se guardan únicamente en tu teléfono y nunca salen de él: Rovika solo usa internet para avisarte cuando hay una versión nueva."
                       )
                       t.addView(estadoLinea(leyendo, "Permiso activado", "Falta activar el permiso"))
                       val tip = texto("Si el interruptor sale gris: Ajustes del teléfono → Aplicaciones → Rovika → ⋮ (arriba a la derecha) → Permitir ajustes restringidos. Luego vuelve y actívalo.", 13f, gris)
@@ -1491,7 +1635,7 @@ jobs:
                       t.addView(estadoLinea(leyendo, "Lee notificaciones", "Falta el permiso de leer notificaciones"))
                       t.addView(estadoLinea(if (usaLetrero) encimaOk else avisosOk, "Avisos en pantalla", "Faltan los avisos en pantalla"))
                       t.addView(estadoLinea(bateriaOk, "Batería sin restricciones", "Batería optimizada"))
-                      val fin = texto("Puedes volver a ver este tutorial en Ajustes → Ver tutorial.", 13f, gris)
+                      val fin = texto("Cuando haya una versión nueva te llegará un aviso para descargarla. Puedes volver a ver este tutorial en Ajustes → Ver tutorial.", 13f, gris)
                       fin.setPadding(0, dp(10), 0, 0)
                       t.addView(fin)
                       contenido.addView(t)
@@ -1582,6 +1726,22 @@ jobs:
                   return f
               }
 
+              private fun bannerActualizacion() {
+                  if (!Actualizar.hayNueva(this)) return
+                  val nombre = getSharedPreferences("tilin", MODE_PRIVATE).getString("updNombre", "") ?: ""
+                  val t = tarjeta(Color.parseColor("#12392A"), verde)
+                  t.addView(texto("🚀 Nueva versión disponible", 17f, verde, true))
+                  val d = texto(nombre + ". Descárgala, toca el archivo y elige Instalar. No pierdes tus pagos ni tus ajustes.", 13f, gris)
+                  d.setPadding(0, dp(4), 0, 0)
+                  t.addView(d)
+                  val b = boton("⬇ Descargar actualización", true) {
+                      abrirAjuste(Intent(Intent.ACTION_VIEW, Uri.parse(Actualizar.APK)))
+                  }
+                  (b.layoutParams as LinearLayout.LayoutParams).setMargins(0, dp(12), 0, 0)
+                  t.addView(b)
+                  contenido.addView(t)
+              }
+
               private fun dibujarAjustes() {
                   val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
                   val estilo = prefs.getString("estilo", "letrero") ?: "letrero"
@@ -1592,11 +1752,28 @@ jobs:
                   sub.setPadding(0, dp(2), 0, dp(14))
                   contenido.addView(sub)
 
-                  contenido.addView(boton("📖 Ver tutorial", false) {
-                      tutPaso = 0
-                      scroll.scrollTo(0, 0)
-                      dibujar()
-                  })
+                  filaBotones(
+                      botonPeq("📖 Ver tutorial", false) {
+                          tutPaso = 0
+                          scroll.scrollTo(0, 0)
+                          dibujar()
+                      },
+                      botonPeq("🔄 Buscar actualizaciones", false) {
+                          Toast.makeText(this, "Buscando...", Toast.LENGTH_SHORT).show()
+                          Thread {
+                              val r = Actualizar.revisarAhora(applicationContext, false)
+                              runOnUiThread {
+                                  if (!isFinishing && !isDestroyed) {
+                                      val msg = if (r == 1) "¡Hay una versión nueva! Míralo en Inicio."
+                                      else if (r == 0) "Ya tienes la última versión ✔"
+                                      else "No pude consultar. Revisa tu internet."
+                                      Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                                      dibujar()
+                                  }
+                              }
+                          }.start()
+                      }
+                  )
 
                   val dur = prefs.getInt("dur", 6)
                   encabezado(
@@ -1653,7 +1830,7 @@ jobs:
                       } catch (e: Exception) {
                           "?"
                       }
-                      t.addView(texto("Rovika versión " + ver, 12f, gris))
+                      t.addView(texto("Rovika versión " + ver + " (código " + Actualizar.codigoActual(this) + ")", 12f, gris))
                       contenido.addView(t)
                   }
               }
@@ -1819,190 +1996,4 @@ jobs:
                   val activadas = Apps.extras(this)
                   val lista = tarjeta(panel)
                   lista.addView(texto("Apps vistas", 14f, gris))
-                  if (vistas.isEmpty()) {
-                      val vacio = texto("Aún no hay apps vistas. Cuando llegue una notificación de pago, aparecerá aquí.", 13f, gris)
-                      vacio.setPadding(0, dp(8), 0, 0)
-                      lista.addView(vacio)
-                  } else {
-                      for (vv in vistas) lista.addView(filaApp(vv.first, vv.second, activadas))
-                  }
-                  contenido.addView(lista)
-
-                  if (activo) {
-                      contenido.addView(boton("Permisos de lectura de notificaciones", false) {
-                          startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                      })
-                  }
-              }
-
-              private fun dibujarInicio() {
-                  val activos = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
-                  val activo = activos.contains(packageName)
-                  val prefs = getSharedPreferences("tilin", MODE_PRIVATE)
-
-                  val cab = LinearLayout(this)
-                  cab.orientation = LinearLayout.HORIZONTAL
-                  cab.gravity = Gravity.CENTER_VERTICAL
-                  val cl = LinearLayout.LayoutParams(-1, -2)
-                  cl.setMargins(0, 0, 0, dp(18))
-                  cab.layoutParams = cl
-                  val colT = LinearLayout(this)
-                  colT.orientation = LinearLayout.VERTICAL
-                  colT.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-                  val titulo = texto("ROVIKA", 28f, Color.WHITE, true)
-                  titulo.letterSpacing = 0.25f
-                  colT.addView(titulo)
-                  colT.addView(texto("Tus pagos, en voz alta", 14f, cian))
-                  cab.addView(colT)
-                  val pill = texto(if (activo) "● Activo" else "● Sin permiso", 13f, if (activo) verde else ambar, true)
-                  pill.setPadding(dp(14), dp(8), dp(14), dp(8))
-                  pill.background = caja(
-                      if (activo) Color.parseColor("#0B2A33") else Color.parseColor("#3A2A12"),
-                      20,
-                      if (activo) cian else ambar
-                  )
-                  cab.addView(pill)
-                  contenido.addView(cab)
-
-                  if (!activo) {
-                      contenido.addView(boton("Dar permiso de notificaciones", true) {
-                          startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                      })
-                  }
-
-                  val hoy = hoyStr()
-                  val dia = SimpleDateFormat("yyyyMMdd", Locale.US)
-                  val hora = SimpleDateFormat("h:mm a", Locale("es", "CO"))
-                  val todos = leerPagos()
-                  val pagos = todos.filter { dia.format(Date(it.ts)) == hoy }
-                  val total = pagos.fold(0L) { a, p -> a + p.monto }
-                  val meta = prefs.getLong("meta", 150000L)
-                  val pct = (total * 100L / meta).coerceAtMost(100L).toInt()
-
-                  val hero = LinearLayout(this)
-                  hero.orientation = LinearLayout.VERTICAL
-                  hero.background = heroFondo()
-                  hero.setPadding(dp(22), dp(20), dp(22), dp(20))
-                  val hp = LinearLayout.LayoutParams(-1, -2)
-                  hp.setMargins(0, 0, 0, dp(12))
-                  hero.layoutParams = hp
-                  hero.addView(texto("Hoy llevas", 14f, Color.parseColor("#B8C7E6")))
-                  val tvTotal = texto("$ " + Aviso.fmt(total), 44f, Color.WHITE, true)
-                  hero.addView(tvTotal)
-                  val chips = LinearLayout(this)
-                  chips.orientation = LinearLayout.HORIZONTAL
-                  chips.addView(texto(pagos.size.toString() + (if (pagos.size == 1) " pago" else " pagos"), 14f, verde, true))
-                  chips.addView(texto("   ·   ", 14f, gris))
-                  chips.addView(texto(
-                      if (pct >= 100) "🎉 Meta cumplida" else pct.toString() + "% de la meta",
-                      14f, if (pct >= 100) verde else cian, true
-                  ))
-                  hero.addView(chips)
-                  contenido.addView(hero)
-
-                  val desde = ultimoTotal
-                  ultimoTotal = total
-                  if (desde != total) {
-                      val a = ValueAnimator.ofFloat(desde.toFloat(), total.toFloat())
-                      a.duration = 900
-                      a.addUpdateListener {
-                          tvTotal.text = "$ " + Aviso.fmt((it.animatedValue as Float).toLong())
-                      }
-                      a.start()
-                  }
-
-                  val tMeta = tarjeta(panel)
-                  tMeta.setOnClickListener { pedirMeta() }
-                  tMeta.addView(texto("Meta del día", 14f, gris))
-                  tMeta.addView(texto("$ " + Aviso.fmt(total) + " de $ " + Aviso.fmt(meta), 18f, Color.WHITE, true))
-                  val pista = LinearLayout(this)
-                  pista.orientation = LinearLayout.HORIZONTAL
-                  pista.weightSum = 100f
-                  pista.background = caja(Color.parseColor("#17233B"), 8)
-                  val pl = LinearLayout.LayoutParams(-1, dp(10))
-                  pl.setMargins(0, dp(10), 0, dp(8))
-                  pista.layoutParams = pl
-                  if (pct > 0) {
-                      val rell = View(this)
-                      rell.background = degradado()
-                      rell.layoutParams = LinearLayout.LayoutParams(0, -1, pct.toFloat())
-                      pista.addView(rell)
-                  }
-                  tMeta.addView(pista)
-                  tMeta.addView(texto("Toca para cambiar la meta", 12f, gris))
-                  contenido.addView(tMeta)
-
-                  val vals = mutableListOf<Long>()
-                  val etiquetas = mutableListOf<String>()
-                  val porDia = todos.groupBy { dia.format(Date(it.ts)) }
-                  val nombreDia = SimpleDateFormat("EEE", Locale("es", "CO"))
-                  var totalSemana = 0L
-                  for (i in 6 downTo 0) {
-                      val cal = Calendar.getInstance()
-                      cal.add(Calendar.DAY_OF_YEAR, -i)
-                      val clave = dia.format(cal.time)
-                      val suma = (porDia[clave] ?: emptyList()).fold(0L) { a, p -> a + p.monto }
-                      vals.add(suma)
-                      totalSemana += suma
-                      val nd = nombreDia.format(cal.time)
-                      etiquetas.add(nd.substring(0, 1).uppercase())
-                  }
-                  val tSem = tarjeta(panel)
-                  tSem.addView(texto("Últimos 7 días", 14f, gris))
-                  tSem.addView(texto("$ " + Aviso.fmt(totalSemana), 24f, Color.WHITE, true))
-                  val grafica = Barras(this, vals, etiquetas)
-                  val gl = LinearLayout.LayoutParams(-1, dp(150))
-                  gl.setMargins(0, dp(10), 0, 0)
-                  grafica.layoutParams = gl
-                  tSem.addView(grafica)
-                  contenido.addView(tSem)
-
-                  filaBotones(
-                      botonPeq("🔊 Probar aviso", activo) {
-                          hablarPrueba()
-                          Aviso.mostrar(this, "Bre-B", "$ 15.000", "Nequi")
-                      },
-                      botonPeq("📤 Compartir resumen", false) {
-                          compartir(resumenHoy())
-                      }
-                  )
-
-                  val h1 = texto("Pagos de hoy", 18f, Color.WHITE, true)
-                  h1.setPadding(0, dp(10), 0, dp(10))
-                  contenido.addView(h1)
-
-                  if (pagos.isEmpty()) {
-                      val vacio = texto("Aún no hay pagos hoy.", 14f, gris)
-                      vacio.setPadding(0, 0, 0, dp(14))
-                      contenido.addView(vacio)
-                  } else {
-                      for (p in pagos) contenido.addView(filaPago(p, hora))
-                  }
-
-                  encabezado("🧾", "Registro de notificaciones", "Lo último que Rovika vio de tus bancos", logAbierto) {
-                      logAbierto = !logAbierto
-                      dibujar()
-                  }
-                  if (logAbierto) {
-                      val log = prefs.getString("log", "") ?: ""
-                      val t = tarjeta(panel)
-                      val lv = texto(if (log.isBlank()) "Todavía no hay notificaciones." else log, 11f, Color.parseColor("#7C89A3"))
-                      lv.setTextIsSelectable(true)
-                      t.addView(lv)
-                      contenido.addView(t)
-                  }
-              }
-
-              private fun dibujarMov() {
-                  contenido.addView(texto("Movimientos", 28f, Color.WHITE, true))
-                  val sub = texto("Pagos por día", 14f, cian)
-                  sub.setPadding(0, dp(2), 0, dp(14))
-                  contenido.addView(sub)
-
-                  filaBotones(
-                      botonPeq("💾 Guardar copia", false) {
-                          val datos = getSharedPreferences("tilin", MODE_PRIVATE).getString("pagos", "") ?: ""
-                          if (datos.isBlank()) {
-                              Toast.makeText(this, "Aún no hay movimientos para guardar", Toast.LENGTH_LONG).show()
-                          } else {
-                              compartir(datos
+                  i
