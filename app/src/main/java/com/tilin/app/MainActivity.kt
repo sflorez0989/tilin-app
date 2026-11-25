@@ -85,6 +85,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var tabInicio: TextView
     private lateinit var tabMov: TextView
     private lateinit var tabAj: TextView
+    private lateinit var tabMas: TextView
     private var pestana = 0
     private var abierta = -1
     private var logAbierto = false
@@ -477,7 +478,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tabInicio = texto("🏠\nInicio", 12f, cian, true)
         tabMov = texto("📋\nMovimientos", 12f, gris, true)
         tabAj = texto("⚙️\nAjustes", 12f, gris, true)
-        for (t in listOf(tabInicio, tabMov, tabAj)) {
+        tabMas = texto("✨\nMás", 12f, gris, true)
+        for (t in listOf(tabInicio, tabMov, tabAj, tabMas)) {
             t.gravity = Gravity.CENTER
             t.layoutParams = LinearLayout.LayoutParams(0, dp(60), 1f)
             barra.addView(t)
@@ -485,6 +487,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tabInicio.setOnClickListener { pestana = 0; scroll.scrollTo(0, 0); dibujar() }
         tabMov.setOnClickListener { pestana = 1; scroll.scrollTo(0, 0); dibujar() }
         tabAj.setOnClickListener { pestana = 2; scroll.scrollTo(0, 0); dibujar() }
+        tabMas.setOnClickListener { pestana = 3; scroll.scrollTo(0, 0); dibujar() }
 
         raiz.addView(scroll)
         raiz.addView(barra)
@@ -516,13 +519,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             dibujarTutorial()
             return
         }
-        val tabs = listOf(tabInicio, tabMov, tabAj)
+        val tabs = listOf(tabInicio, tabMov, tabAj, tabMas)
         for (i in tabs.indices) {
             tabs[i].setTextColor(if (pestana == i) cian else Color.parseColor("#5B6781"))
         }
         if (pestana == 0) dibujarInicio()
         else if (pestana == 1) dibujarMov()
-        else dibujarAjustes()
+        else if (pestana == 2) dibujarAjustes()
+        else Mas.dibujar(this, contenido, scroll, barraNav) { dibujar() }
     }
 
     private fun abrirAjuste(i: Intent) {
