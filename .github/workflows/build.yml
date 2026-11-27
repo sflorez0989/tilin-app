@@ -14,7 +14,7 @@ jobs:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     env:
-      VERSION_NAME: "2.7"
+      VERSION_NAME: "2.8"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -34,6 +34,8 @@ jobs:
           mkdir -p app/src/main/res/mipmap-anydpi-v26
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/xml
           cat > .gitignore <<'EOF'
           build/
           .gradle/
@@ -47,25 +49,34 @@ jobs:
           App Android que lee las notificaciones de pago (Nequi, Bancolombia, Daviplata, Davivienda, Nu, BBVA y otros), las dice en voz alta y lleva la cuenta del dia. Los pagos se guardan solo en el telefono. La app usa internet unicamente para buscar nuevas versiones en GitHub Releases.
 
           ## Donde esta todo
-          - Este repositorio de GitHub guarda el codigo. El editor de GitHub corta lo que pasa de unas 2000 lineas, por eso el codigo esta partido en DOS archivos de workflow:
-            1. .github/workflows/pantallas.yml guarda el archivo MainActivity.kt (las pantallas y el tutorial) dentro del repositorio.
-            2. .github/workflows/build.yml crea todo lo demas, arma el APK y lo publica en Releases.
-          - La carpeta app/src/main/java/com/tilin/app tiene el codigo: MainActivity (pantallas y tutorial), PagoListenerService (lee notificaciones), Aviso (letrero), Voz, Apps y Actualizar (avisos de nueva version).
+          - El editor de GitHub corta lo que pasa de unas 2000 lineas, por eso el codigo esta partido en varios archivos de workflow:
+            1. .github/workflows/pantallas.yml guarda MainActivity.kt (pantallas y tutorial).
+            2. .github/workflows/extras.yml guarda Mas.kt y conecta la pestana Mas (modo manejo, gastos, resumen, exportar, acerca de).
+            3. .github/workflows/extras2.yml guarda Mas2.kt y conecta salidas por confirmar y opciones extra.
+            4. .github/workflows/build.yml crea todo lo demas (lectura de pagos, voz, letrero, sonido, widget, actualizaciones, iconos), arma el APK y lo publica en Releases.
+          - Si se vuelve a ejecutar pantallas.yml, hay que volver a ejecutar extras.yml y despues extras2.yml (cada uno conecta su parte).
+          - La carpeta app/src/main/java/com/tilin/app tiene el codigo.
           - rovika.keystore es la firma fija. NO la borres: gracias a ella cada version nueva se instala encima de la anterior sin perder datos.
           - La pestana Releases tiene cada version lista para descargar. Link fijo de la ultima: https://github.com/sflorez0989/tilin-app/releases/latest/download/Rovika.apk
 
           ## Como sacar una version nueva
-          1. Si cambian las pantallas: editar pantallas.yml, confirmar y esperar el check verde. build.yml arranca solo cuando pantallas.yml termina bien.
-          2. Si cambia otra cosa (lectura de pagos, letrero, voz, actualizaciones): editar build.yml y subir VERSION_NAME arriba.
+          1. Si cambian las pantallas: editar pantallas.yml, confirmar y esperar el check verde. Luego correr extras.yml y extras2.yml (Run workflow).
+          2. Si cambia otra cosa (lectura de pagos, letrero, voz, sonido, widget, actualizaciones): editar build.yml y subir VERSION_NAME arriba.
           3. Confirmar cambios y esperar el check verde en Actions.
           4. GitHub crea el release solo. Quien ya tiene la app recibe el aviso de actualizacion (maximo 12 horas) y la instala encima.
           5. Cada archivo debe quedar por debajo de unas 1900 lineas para que el editor no lo corte.
 
           ## Como funcionan las actualizaciones
           - El numero de version interno es 100 mas el numero de ejecucion de Actions. El release se llama v VERSION-bNUMERO y la app compara ese numero con el suyo.
-          - La app consulta https://api.github.com/repos/sflorez0989/tilin-app/releases/latest cada 12 horas (al abrirse y desde el servicio que lee notificaciones).
+          - La app consulta https://api.github.com/repos/sflorez0989/tilin-app/releases/latest cada 12 horas.
           - Android no permite instalar en silencio: la persona toca la notificacion, descarga el APK y toca Instalar.
           - El repositorio debe ser publico para que esto funcione. Para pasarlo a privado hay que mover los APK a un repositorio publico aparte.
+
+          ## Salidas (compras con tarjeta, envios, retiros)
+          - Cuando una notificacion de un banco habla de compra, envio, pago o retiro, Rovika la guarda en Salidas por confirmar. El usuario toca Contar (pasa a gastos) o Ignorar.
+          - Opciones extra permite contar las salidas automaticamente.
+          - GMF e impuestos se ignoran.
+          - Falta ver textos reales de notificaciones de compra para afinar las frases.
 
           ## Reglas para no danar la app
           - Un cambio a la vez y probar antes del siguiente.
@@ -79,24 +90,19 @@ jobs:
           - Nequi por QR o Bre-B: Te enviaron plata por Bre-B Te enviaron $17.000. Entra a tu app y revisa tu saldo.
           - Nequi entre cuentas: Envio NOMBRE te envio 7000, lo mejor! (sin signo de pesos).
           - Recarga desde Bancolombia: texto de la notificacion aun sin ver, se detecta por la palabra recarga.
-          - Lo que el usuario envia, compras, GMF e impuestos se ignoran.
 
           ## Como seguir con Claude en un chat nuevo
-          Claude no recuerda chats anteriores. Pegar este archivo y el contenido de build.yml y pantallas.yml, y contarle que se quiere cambiar. Pedirle siempre el codigo completo para pegar, partido en dos archivos si hace falta.
+          Claude no recuerda chats anteriores. Pegar este archivo y el contenido de los archivos de workflow, y contarle que se quiere cambiar. Pedirle siempre el codigo completo para pegar, partido en varios archivos si hace falta.
 
           ## Preferencias del dueno
           Conductor en Colombia, usa tablet Samsung sin computador e instala por APK. Prefiere pasos simples, codigo completo para pegar y mensajes cortos en espanol.
 
           ## Ideas pendientes
-          - Gastos con tarjeta (falta ver una notificacion real de compra)
-          - Resumen del mes y comparacion de semanas
-          - Modo manejo con letras grandes
-          - Sonido de caja registradora
-          - Bloqueo con huella o PIN
-          - Exportar a Excel
           - Probar Bancolombia, Nu y Davivienda con notificaciones reales
+          - Afinar la deteccion de compras con tarjeta con textos reales
+          - Bloqueo con huella o PIN
           - iPhone: Apple no permite leer notificaciones de otras apps, solo seria por correo
-          - Antes de vender: pasar el repositorio a privado (cambia el sistema de actualizaciones) y publicar en Google Play
+          - Antes de vender: repositorio privado con repositorio publico aparte para los APK, politica de privacidad en linea y Google Play
           EOF
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -164,6 +170,16 @@ jobs:
               <color name="ic_bg">#0B1230</color>
           </resources>
           EOF
+          cat > app/src/main/res/drawable/ic_bg_grad.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android"
+              android:shape="rectangle">
+              <gradient
+                  android:startColor="#1B3F9E"
+                  android:endColor="#070B14"
+                  android:angle="315" />
+          </shape>
+          EOF
           cat > app/src/main/res/drawable/ic_notif.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -183,31 +199,92 @@ jobs:
               android:height="108dp"
               android:viewportWidth="108"
               android:viewportHeight="108">
+              <path
+                  android:fillColor="#00000000"
+                  android:strokeColor="#22D3EE"
+                  android:strokeWidth="3"
+                  android:pathData="M54,22A32,32 0 1,1 53.9,22Z" />
               <group
-                  android:scaleX="2.5"
-                  android:scaleY="2.5"
-                  android:translateX="24"
-                  android:translateY="24">
+                  android:scaleX="1.8"
+                  android:scaleY="1.8"
+                  android:translateX="32.4"
+                  android:translateY="32.4">
                   <path
                       android:fillColor="#FFFFFF"
                       android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z" />
               </group>
               <path
-                  android:fillColor="#22D3EE"
-                  android:pathData="M79,38a9,9 0 1,0 -18,0a9,9 0 1,0 18,0z" />
+                  android:fillColor="#2EE59D"
+                  android:pathData="M82,34a8,8 0 1,0 -16,0a8,8 0 1,0 16,0z" />
           </vector>
+          EOF
+          cat > app/src/main/res/drawable/widget_fondo.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android"
+              android:shape="rectangle">
+              <gradient
+                  android:startColor="#14327A"
+                  android:endColor="#0B2A33"
+                  android:angle="315" />
+              <corners android:radius="22dp" />
+          </shape>
+          EOF
+          cat > app/src/main/res/layout/widget_total.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@+id/w_raiz"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical"
+              android:gravity="center_vertical"
+              android:padding="14dp"
+              android:background="@drawable/widget_fondo">
+              <TextView
+                  android:id="@+id/w_titulo"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="ROVIKA · hoy"
+                  android:textColor="#22D3EE"
+                  android:textSize="11sp"
+                  android:textStyle="bold" />
+              <TextView
+                  android:id="@+id/w_total"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="$ 0"
+                  android:textColor="#FFFFFF"
+                  android:textSize="26sp"
+                  android:textStyle="bold" />
+              <TextView
+                  android:id="@+id/w_detalle"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="0 pagos hoy"
+                  android:textColor="#2EE59D"
+                  android:textSize="12sp" />
+          </LinearLayout>
+          EOF
+          cat > app/src/main/res/xml/widget_info.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+              android:minWidth="180dp"
+              android:minHeight="70dp"
+              android:updatePeriodMillis="1800000"
+              android:initialLayout="@layout/widget_total"
+              android:resizeMode="horizontal|vertical"
+              android:widgetCategory="home_screen" />
           EOF
           cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/ic_bg" />
+              <background android:drawable="@drawable/ic_bg_grad" />
               <foreground android:drawable="@drawable/ic_fg" />
           </adaptive-icon>
           EOF
           cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/ic_bg" />
+              <background android:drawable="@drawable/ic_bg_grad" />
               <foreground android:drawable="@drawable/ic_fg" />
           </adaptive-icon>
           EOF
@@ -239,8 +316,257 @@ jobs:
                           <action android:name="android.service.notification.NotificationListenerService" />
                       </intent-filter>
                   </service>
+                  <receiver
+                      android:name=".TotalWidget"
+                      android:exported="true"
+                      android:label="Rovika · Total del día">
+                      <intent-filter>
+                          <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.appwidget.provider"
+                          android:resource="@xml/widget_info" />
+                  </receiver>
               </application>
           </manifest>
+          EOF
+          cat > app/src/main/java/com/tilin/app/Sonido.kt <<'EOF'
+          package com.tilin.app
+
+          import android.content.Context
+          import android.media.AudioAttributes
+          import android.media.AudioFormat
+          import android.media.AudioTrack
+          import kotlin.math.PI
+          import kotlin.math.exp
+          import kotlin.math.sin
+
+          object Sonido {
+              fun activo(c: Context): Boolean =
+                  c.applicationContext.getSharedPreferences("tilin", Context.MODE_PRIVATE).getBoolean("caja", true)
+
+              fun caja(c: Context) {
+                  if (activo(c)) tocar()
+              }
+
+              fun tocar() {
+                  Thread {
+                      var track: AudioTrack? = null
+                      try {
+                          val rate = 22050
+                          val total = (rate * 0.6).toInt()
+                          val buf = ShortArray(total)
+                          for (i in 0 until total) {
+                              val t = i.toDouble() / rate
+                              var s = 0.0
+                              if (t < 0.09) {
+                                  s = sin(2.0 * PI * 1318.5 * t) * exp(-t * 12.0)
+                              } else if (t >= 0.11) {
+                                  val u = t - 0.11
+                                  s = (sin(2.0 * PI * 1975.5 * u) * 0.7 + sin(2.0 * PI * 3951.0 * u) * 0.3) * exp(-u * 6.0)
+                              }
+                              buf[i] = (s * 0.5 * 32767.0).toInt().toShort()
+                          }
+                          track = AudioTrack.Builder()
+                              .setAudioAttributes(
+                                  AudioAttributes.Builder()
+                                      .setUsage(AudioAttributes.USAGE_MEDIA)
+                                      .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                      .build()
+                              )
+                              .setAudioFormat(
+                                  AudioFormat.Builder()
+                                      .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                      .setSampleRate(rate)
+                                      .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                                      .build()
+                              )
+                              .setBufferSizeInBytes(buf.size * 2)
+                              .setTransferMode(AudioTrack.MODE_STATIC)
+                              .build()
+                          track.write(buf, 0, buf.size)
+                          track.play()
+                          Thread.sleep(800)
+                      } catch (e: Exception) {
+                      } finally {
+                          try {
+                              track?.release()
+                          } catch (e: Exception) { }
+                      }
+                  }.start()
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/tilin/app/TotalWidget.kt <<'EOF'
+          package com.tilin.app
+
+          import android.app.PendingIntent
+          import android.appwidget.AppWidgetManager
+          import android.appwidget.AppWidgetProvider
+          import android.content.ComponentName
+          import android.content.Context
+          import android.content.Intent
+          import android.widget.RemoteViews
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          class TotalWidget : AppWidgetProvider() {
+              override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+                  for (id in ids) {
+                      manager.updateAppWidget(id, armar(context))
+                  }
+              }
+
+              companion object {
+                  fun armar(c: Context): RemoteViews {
+                      val v = RemoteViews(c.packageName, R.layout.widget_total)
+                      val dia = SimpleDateFormat("yyyyMMdd", Locale.US)
+                      val hoy = dia.format(Date())
+                      val prefs = c.getSharedPreferences("tilin", Context.MODE_PRIVATE)
+                      var total = 0L
+                      var n = 0
+                      for (linea in (prefs.getString("pagos", "") ?: "").split("\n")) {
+                          if (linea.isBlank()) continue
+                          val p = linea.split("|")
+                          if (p.size < 3) continue
+                          val ts = p[0].toLongOrNull() ?: continue
+                          if (dia.format(Date(ts)) == hoy) {
+                              total += (p[1].toLongOrNull() ?: 0L)
+                              n += 1
+                          }
+                      }
+                      v.setTextViewText(R.id.w_total, "$ " + Aviso.fmt(total))
+                      v.setTextViewText(R.id.w_detalle, n.toString() + (if (n == 1) " pago hoy" else " pagos hoy"))
+                      val abrir = PendingIntent.getActivity(
+                          c, 2, Intent(c, MainActivity::class.java),
+                          PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                      )
+                      v.setOnClickPendingIntent(R.id.w_raiz, abrir)
+                      return v
+                  }
+
+                  fun refrescar(c: Context) {
+                      try {
+                          val app = c.applicationContext
+                          val m = AppWidgetManager.getInstance(app)
+                          val ids = m.getAppWidgetIds(ComponentName(app, TotalWidget::class.java))
+                          if (ids.isNotEmpty()) {
+                              val v = armar(app)
+                              for (id in ids) {
+                                  m.updateAppWidget(id, v)
+                              }
+                          }
+                      } catch (e: Exception) { }
+                  }
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/tilin/app/Salidas.kt <<'EOF'
+          package com.tilin.app
+
+          import android.content.Context
+
+          class Salida(val ts: Long, val monto: Long, val tipo: String, val detalle: String)
+
+          object Salidas {
+              private var ultimaClave = ""
+              private var ultimaHora = 0L
+
+              private const val NUM = "(\\d{1,3}(?:[.,]\\d{3})+(?:,\\d{1,2})?|\\d+(?:,\\d{1,2})?)"
+              private val conSigno = Regex("(?:[$]|COP)\\s?" + NUM, RegexOption.IGNORE_CASE)
+              private val sinSigno = Regex("(?:enviaste|transferiste|pagaste|compraste|retiraste|giraste)\\s+" + NUM, RegexOption.IGNORE_CASE)
+
+              private fun prefs(c: Context) =
+                  c.applicationContext.getSharedPreferences("tilin", Context.MODE_PRIVATE)
+
+              private fun lineas(c: Context, clave: String): List<String> =
+                  (prefs(c).getString(clave, "") ?: "").split("\n").filter { it.isNotBlank() }
+
+              private fun limpio(s: String): String = s.replace("|", " ").replace("\n", " ")
+
+              private fun parse(s: String): Long? {
+                  var n = s
+                  val k = n.lastIndexOf(',')
+                  if (k >= 0 && n.length - k - 1 <= 2) n = n.substring(0, k)
+                  n = n.replace(".", "").replace(",", "")
+                  return n.toLongOrNull()
+              }
+
+              private fun tipoDe(m: String): String? {
+                  if (m.contains("gmf") || m.contains("impuesto") || m.contains("4x1000") || m.contains("4 x 1000")) return null
+                  if (m.contains("retir")) return "🏧 Retiro"
+                  if (m.contains("enviaste") || m.contains("transferiste") || m.contains("giraste")) return "📤 Envío a otra persona"
+                  if (m.contains("compra") || m.contains("tarjeta")) return "💳 Compra con tarjeta"
+                  if (m.contains("pagaste") || m.contains("pago a ") || m.contains("pagó a") || m.contains("has pagado") || m.contains("pago de")) return "🧾 Pago"
+                  if (m.contains("débito") || m.contains("debito") || m.contains("cobro") || m.contains("se descontó") || m.contains("se descontaron")) return "💳 Cobro"
+                  return null
+              }
+
+              private fun escribirGasto(c: Context, ts: Long, monto: Long, cat: String, nota: String) {
+                  val l = lineas(c, "gastos").toMutableList()
+                  l.add(0, ts.toString() + "|" + monto + "|" + limpio(cat) + "|" + limpio(nota))
+                  prefs(c).edit().putString("gastos", l.take(2000).joinToString("\n")).apply()
+              }
+
+              fun analizar(c: Context, app: String, texto: String) {
+                  try {
+                      val t = texto.lowercase()
+                      val tipo = tipoDe(t) ?: return
+                      val m = conSigno.find(texto) ?: sinSigno.find(texto) ?: return
+                      val monto = parse(m.groupValues[1]) ?: return
+                      if (monto <= 0L) return
+                      val clave = monto.toString() + "|" + tipo
+                      val ahora = System.currentTimeMillis()
+                      if (clave == ultimaClave && ahora - ultimaHora < 45000L) return
+                      ultimaClave = clave
+                      ultimaHora = ahora
+                      val detalle = limpio(app)
+                      if (prefs(c).getBoolean("salidaAuto", false)) {
+                          escribirGasto(c, ahora, monto, tipo, detalle)
+                          Aviso.diag(c, "salida contada como gasto: " + tipo)
+                      } else {
+                          val l = lineas(c, "salidas").toMutableList()
+                          l.add(0, ahora.toString() + "|" + monto + "|" + tipo + "|" + detalle)
+                          prefs(c).edit().putString("salidas", l.take(50).joinToString("\n")).apply()
+                          Aviso.diag(c, "salida por confirmar: " + tipo)
+                      }
+                  } catch (e: Exception) { }
+              }
+
+              fun pendientes(c: Context): List<Salida> {
+                  val r = mutableListOf<Salida>()
+                  for (l in lineas(c, "salidas")) {
+                      val p = l.split("|")
+                      if (p.size < 3) continue
+                      val ts = p[0].toLongOrNull() ?: continue
+                      r.add(Salida(ts, p[1].toLongOrNull() ?: 0L, p[2], if (p.size > 3) p[3] else ""))
+                  }
+                  return r
+              }
+
+              fun descartar(c: Context, ts: Long) {
+                  val l = lineas(c, "salidas").filter { it.split("|")[0] != ts.toString() }
+                  prefs(c).edit().putString("salidas", l.joinToString("\n")).apply()
+              }
+
+              fun confirmar(c: Context, ts: Long) {
+                  val s = pendientes(c).firstOrNull { it.ts == ts } ?: return
+                  escribirGasto(c, s.ts, s.monto, s.tipo, s.detalle)
+                  descartar(c, ts)
+              }
+
+              fun confirmarTodas(c: Context) {
+                  for (s in pendientes(c)) {
+                      escribirGasto(c, s.ts, s.monto, s.tipo, s.detalle)
+                  }
+                  prefs(c).edit().putString("salidas", "").apply()
+              }
+
+              fun descartarTodas(c: Context) {
+                  prefs(c).edit().putString("salidas", "").apply()
+              }
+          }
           EOF
           cat > app/src/main/java/com/tilin/app/Actualizar.kt <<'EOF'
           package com.tilin.app
@@ -732,6 +1058,8 @@ jobs:
           package com.tilin.app
 
           import android.app.Notification
+          import android.os.Handler
+          import android.os.Looper
           import android.service.notification.NotificationListenerService
           import android.service.notification.StatusBarNotification
           import android.speech.tts.TextToSpeech
@@ -868,7 +1196,10 @@ jobs:
                   val todas = getSharedPreferences("tilin", MODE_PRIVATE).getBoolean("todas", false)
                   if (!todas || relevante) guardarLog(pkg + ": " + completo)
 
-                  if (negativas.any { minuscula.contains(it) }) return
+                  if (negativas.any { minuscula.contains(it) }) {
+                      Salidas.analizar(this, app, completo)
+                      return
+                  }
                   if (palabras.none { minuscula.contains(it) }) return
 
                   val m1 = montoRegex.find(completo)
@@ -889,13 +1220,25 @@ jobs:
 
                   val antes = totalHoy()
                   guardarPago(monto, app, "", origen)
+                  TotalWidget.refrescar(this)
                   val meta = getSharedPreferences("tilin", MODE_PRIVATE).getLong("meta", 150000L)
                   val cumplida = antes < meta && antes + monto >= meta
 
                   Voz.aplicar(tts, this)
-                  tts?.speak(Voz.frase(this, monto, origen), TextToSpeech.QUEUE_ADD, null, "pago")
-                  if (cumplida) {
-                      tts?.speak("¡Meta del día cumplida! ¡Felicidades!", TextToSpeech.QUEUE_ADD, null, "meta")
+                  val dicho = Voz.frase(this, monto, origen)
+                  if (Sonido.activo(this)) {
+                      Sonido.tocar()
+                      Handler(Looper.getMainLooper()).postDelayed({
+                          tts?.speak(dicho, TextToSpeech.QUEUE_ADD, null, "pago")
+                          if (cumplida) {
+                              tts?.speak("¡Meta del día cumplida! ¡Felicidades!", TextToSpeech.QUEUE_ADD, null, "meta")
+                          }
+                      }, 650L)
+                  } else {
+                      tts?.speak(dicho, TextToSpeech.QUEUE_ADD, null, "pago")
+                      if (cumplida) {
+                          tts?.speak("¡Meta del día cumplida! ¡Felicidades!", TextToSpeech.QUEUE_ADD, null, "meta")
+                      }
                   }
                   try {
                       Aviso.mostrar(
