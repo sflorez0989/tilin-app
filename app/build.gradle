@@ -9,7 +9,7 @@ android {
         applicationId "com.tilin.app"
         minSdk 26
         targetSdk 34
-        versionCode 124
+        versionCode 125
         versionName "2.8"
     }
     signingConfigs {
