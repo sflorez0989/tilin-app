@@ -9,8 +9,8 @@ android {
         applicationId "com.tilin.app"
         minSdk 26
         targetSdk 34
-        versionCode 122
-        versionName "2.7"
+        versionCode 123
+        versionName "2.8"
     }
     signingConfigs {
         rovika {

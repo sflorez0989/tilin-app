@@ -1,6 +1,8 @@
 package com.tilin.app
 
 import android.app.Notification
+import android.os.Handler
+import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.speech.tts.TextToSpeech
@@ -137,7 +139,10 @@ class PagoListenerService : NotificationListenerService(), TextToSpeech.OnInitLi
         val todas = getSharedPreferences("tilin", MODE_PRIVATE).getBoolean("todas", false)
         if (!todas || relevante) guardarLog(pkg + ": " + completo)
 
-        if (negativas.any { minuscula.contains(it) }) return
+        if (negativas.any { minuscula.contains(it) }) {
+            Salidas.analizar(this, app, completo)
+            return
+        }
         if (palabras.none { minuscula.contains(it) }) return
 
         val m1 = montoRegex.find(completo)
@@ -158,13 +163,25 @@ class PagoListenerService : NotificationListenerService(), TextToSpeech.OnInitLi
 
         val antes = totalHoy()
         guardarPago(monto, app, "", origen)
+        TotalWidget.refrescar(this)
         val meta = getSharedPreferences("tilin", MODE_PRIVATE).getLong("meta", 150000L)
         val cumplida = antes < meta && antes + monto >= meta
 
         Voz.aplicar(tts, this)
-        tts?.speak(Voz.frase(this, monto, origen), TextToSpeech.QUEUE_ADD, null, "pago")
-        if (cumplida) {
-            tts?.speak("¡Meta del día cumplida! ¡Felicidades!", TextToSpeech.QUEUE_ADD, null, "meta")
+        val dicho = Voz.frase(this, monto, origen)
+        if (Sonido.activo(this)) {
+            Sonido.tocar()
+            Handler(Looper.getMainLooper()).postDelayed({
+                tts?.speak(dicho, TextToSpeech.QUEUE_ADD, null, "pago")
+                if (cumplida) {
+                    tts?.speak("¡Meta del día cumplida! ¡Felicidades!", TextToSpeech.QUEUE_ADD, null, "meta")
+                }
+            }, 650L)
+        } else {
+            tts?.speak(dicho, TextToSpeech.QUEUE_ADD, null, "pago")
+            if (cumplida) {
+                tts?.speak("¡Meta del día cumplida! ¡Felicidades!", TextToSpeech.QUEUE_ADD, null, "meta")
+            }
         }
         try {
             Aviso.mostrar(
