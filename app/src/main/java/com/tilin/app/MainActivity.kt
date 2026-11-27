@@ -499,6 +499,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         dibujar()
         h.removeCallbacks(tic)
         h.postDelayed(tic, 30000)
+        Novedades.nav = { p, s -> pestana = p; if (s >= 0) { Mas.irA(s) { dibujar() } } else { scroll.scrollTo(0, 0); dibujar() } }
+        Novedades.mostrarSiToca(this)
         Actualizar.revisarSiToca(this) {
             h.post {
                 if (!isFinishing && !isDestroyed && tutPaso < 0 && Actualizar.hayNueva(this)) dibujar()
@@ -1179,11 +1181,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val tSem = tarjeta(panel)
         tSem.addView(texto("Últimos 7 días", 14f, gris))
         tSem.addView(texto("$ " + Aviso.fmt(totalSemana), 24f, Color.WHITE, true))
-        val grafica = Barras(this, vals, etiquetas)
+        val grafica = BarrasSel(this, vals, etiquetas, Dia.sel) { i -> Dia.sel = if (Dia.sel == i) -1 else i; dibujar() }
         val gl = LinearLayout.LayoutParams(-1, dp(150))
         gl.setMargins(0, dp(10), 0, 0)
         grafica.layoutParams = gl
         tSem.addView(grafica)
+                  Dia.detalle(this, tSem)
         contenido.addView(tSem)
 
         filaBotones(
@@ -1196,7 +1199,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
         )
 
-        val h1 = texto("Pagos de hoy", 18f, Color.WHITE, true)
+        val h1 = texto("Últimos pagos de hoy", 18f, Color.WHITE, true)
         h1.setPadding(0, dp(10), 0, dp(10))
         contenido.addView(h1)
 
@@ -1205,7 +1208,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             vacio.setPadding(0, 0, 0, dp(14))
             contenido.addView(vacio)
         } else {
-            for (p in pagos) contenido.addView(filaPago(p, hora))
+            for (p in pagos.take(3)) contenido.addView(filaPago(p, hora))
+                  if (pagos.size > 3) {
+                      contenido.addView(boton("Ver todos los movimientos (" + pagos.size + ")", false) { pestana = 1; scroll.scrollTo(0, 0); dibujar() })
+                  }
         }
 
         encabezado("🧾", "Registro de notificaciones", "Lo último que Rovika vio de tus bancos", logAbierto) {

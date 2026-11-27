@@ -296,13 +296,33 @@ object Mas {
         item(a, cont, "🚗", "Modo manejo", "Letras gigantes con tu último pago") { irA(3, refrescar) }
         item(a, cont, "💸", "Gastos y ganancia neta", "Anota gasolina, peajes y más") { irA(1, refrescar) }
         item(a, cont, "📊", "Resumen del mes", "Totales, comparación y por banco") { irA(2, refrescar) }
-        item(a, cont, "📤", "Exportar a Excel", "Guarda tus movimientos en un archivo") { dialogoExportar(a) }
+        item(a, cont, "📤", "Exportar a Excel o PDF", "Un PDF bonito o tu archivo de Excel") { dialogoExportar(a) }
         item(a, cont, "🔔", "Salidas por confirmar", Mas2.textoPendientes(a)) { irA(5, refrescar) }
         item(a, cont, "⚙️", "Opciones extra", "Sonido de caja y widget") { irA(6, refrescar) }
+        item(a, cont, "🆕", "Qué hay de nuevo", "Las novedades de esta versión") { Novedades.mostrar(a) }
         item(a, cont, "ℹ️", "Acerca de Rovika", "Versión, privacidad y recomendar") { irA(4, refrescar) }
     }
 
     fun dialogoExportar(a: Activity) {
+        AlertDialog.Builder(a)
+            .setTitle("Exportar")
+            .setItems(arrayOf("📗 Excel (.csv) para tu contabilidad", "📕 PDF bonito del mes")) { _, i ->
+                if (i == 0) dialogoExportarCsv(a) else dialogoPdf(a)
+            }
+            .show()
+    }
+
+    fun dialogoPdf(a: Activity) {
+        AlertDialog.Builder(a)
+            .setTitle("PDF del mes")
+            .setItems(arrayOf("Este mes", "Mes anterior")) { _, i ->
+                val r = rangoMes(if (i == 0) 0 else -1)
+                Pdf.mes(a, r.first, r.second, nombreMes(r.first))
+            }
+            .show()
+    }
+
+    fun dialogoExportarCsv(a: Activity) {
         val opciones = arrayOf("Este mes", "Mes anterior", "Todo el historial")
         AlertDialog.Builder(a)
             .setTitle("Exportar a Excel")
@@ -518,6 +538,7 @@ object Mas {
         cg.addView(texto(a, "Ganancia neta: " + netoTxt, 18f, if (neto >= 0L) verde else rojo, true))
         cont.addView(cg)
 
+        cont.addView(boton(a, "📕 Descargar PDF de este mes", false) { Pdf.mes(a, ini, fin, nombreMes(ini)) })
         cont.addView(boton(a, "📤 Exportar este mes a Excel", true) {
             exportar(a, ini, fin, nombreMes(ini))
         })
