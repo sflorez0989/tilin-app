@@ -52,9 +52,9 @@ object Mas {
     private val categorias = listOf("⛽ Gasolina", "🛣️ Peaje", "🧽 Lavada", "🍔 Comida", "🅿️ Parqueo", "🔧 Otro")
     private val diaFmt = SimpleDateFormat("yyyyMMdd", Locale.US)
 
-    private fun dp(c: Context, v: Int): Int = (v * c.resources.displayMetrics.density).toInt()
+    fun dp(c: Context, v: Int): Int = (v * c.resources.displayMetrics.density).toInt()
 
-    private fun caja(c: Context, color: Int, radio: Int, bordeColor: Int = 0): GradientDrawable {
+    fun caja(c: Context, color: Int, radio: Int, bordeColor: Int = 0): GradientDrawable {
         val g = GradientDrawable()
         g.setColor(color)
         g.cornerRadius = dp(c, radio).toFloat()
@@ -62,13 +62,13 @@ object Mas {
         return g
     }
 
-    private fun degradado(c: Context): GradientDrawable {
+    fun degradado(c: Context): GradientDrawable {
         val g = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(azul, cian))
         g.cornerRadius = dp(c, 16).toFloat()
         return g
     }
 
-    private fun texto(c: Context, t: String, size: Float, color: Int, bold: Boolean = false): TextView {
+    fun texto(c: Context, t: String, size: Float, color: Int, bold: Boolean = false): TextView {
         val v = TextView(c)
         v.text = t
         v.textSize = size
@@ -77,7 +77,7 @@ object Mas {
         return v
     }
 
-    private fun tarjeta(c: Context, color: Int = panel, bordeColor: Int = borde): LinearLayout {
+    fun tarjeta(c: Context, color: Int = panel, bordeColor: Int = borde): LinearLayout {
         val l = LinearLayout(c)
         l.orientation = LinearLayout.VERTICAL
         l.background = caja(c, color, 22, bordeColor)
@@ -88,7 +88,7 @@ object Mas {
         return l
     }
 
-    private fun hero(c: Context): LinearLayout {
+    fun hero(c: Context): LinearLayout {
         val l = LinearLayout(c)
         l.orientation = LinearLayout.VERTICAL
         val g = GradientDrawable(
@@ -105,7 +105,7 @@ object Mas {
         return l
     }
 
-    private fun boton(c: Context, t: String, lleno: Boolean, accion: () -> Unit): Button {
+    fun boton(c: Context, t: String, lleno: Boolean, accion: () -> Unit): Button {
         val b = Button(c)
         b.text = t
         b.isAllCaps = false
@@ -120,7 +120,7 @@ object Mas {
         return b
     }
 
-    private fun botonPeq(c: Context, t: String, lleno: Boolean, accion: () -> Unit): Button {
+    fun botonPeq(c: Context, t: String, lleno: Boolean, accion: () -> Unit): Button {
         val b = Button(c)
         b.text = t
         b.isAllCaps = false
@@ -135,7 +135,7 @@ object Mas {
         return b
     }
 
-    private fun filaBotones(c: Context, cont: LinearLayout, vararg bs: Button) {
+    fun filaBotones(c: Context, cont: LinearLayout, vararg bs: Button) {
         val f = LinearLayout(c)
         f.orientation = LinearLayout.HORIZONTAL
         val lp = LinearLayout.LayoutParams(-1, -2)
@@ -145,17 +145,17 @@ object Mas {
         cont.addView(f)
     }
 
-    private fun prefs(c: Context) = c.getSharedPreferences("tilin", Context.MODE_PRIVATE)
+    fun prefs(c: Context) = c.getSharedPreferences("tilin", Context.MODE_PRIVATE)
 
-    private fun diaDe(ts: Long): String = diaFmt.format(Date(ts))
+    fun diaDe(ts: Long): String = diaFmt.format(Date(ts))
 
-    private fun suma(l: List<Reg>): Long {
+    fun suma(l: List<Reg>): Long {
         var s = 0L
         for (r in l) s += r.monto
         return s
     }
 
-    private fun leerPagos(c: Context): List<Reg> {
+    fun leerPagos(c: Context): List<Reg> {
         val r = mutableListOf<Reg>()
         for (linea in (prefs(c).getString("pagos", "") ?: "").split("\n")) {
             if (linea.isBlank()) continue
@@ -169,7 +169,7 @@ object Mas {
         return r
     }
 
-    private fun leerGastos(c: Context): List<Reg> {
+    fun leerGastos(c: Context): List<Reg> {
         val r = mutableListOf<Reg>()
         for (linea in (prefs(c).getString("gastos", "") ?: "").split("\n")) {
             if (linea.isBlank()) continue
@@ -183,20 +183,20 @@ object Mas {
         return r
     }
 
-    private fun guardarGasto(c: Context, monto: Long, cat: String, nota: String) {
+    fun guardarGasto(c: Context, monto: Long, cat: String, nota: String) {
         val limpio = { s: String -> s.replace("|", " ").replace("\n", " ") }
         val actuales = (prefs(c).getString("gastos", "") ?: "").split("\n").filter { it.isNotBlank() }.toMutableList()
         actuales.add(0, System.currentTimeMillis().toString() + "|" + monto + "|" + limpio(cat) + "|" + limpio(nota))
         prefs(c).edit().putString("gastos", actuales.take(2000).joinToString("\n")).apply()
     }
 
-    private fun borrarGasto(c: Context, ts: Long) {
+    fun borrarGasto(c: Context, ts: Long) {
         val lineas = (prefs(c).getString("gastos", "") ?: "").split("\n")
             .filter { it.isNotBlank() && it.split("|")[0] != ts.toString() }
         prefs(c).edit().putString("gastos", lineas.joinToString("\n")).apply()
     }
 
-    private fun rangoMes(desp: Int): Pair<Long, Long> {
+    fun rangoMes(desp: Int): Pair<Long, Long> {
         val cal = Calendar.getInstance()
         cal.set(Calendar.DAY_OF_MONTH, 1)
         cal.set(Calendar.HOUR_OF_DAY, 0)
@@ -209,9 +209,9 @@ object Mas {
         return Pair(ini, cal.timeInMillis)
     }
 
-    private fun nombreMes(ts: Long): String = SimpleDateFormat("yyyy-MM", Locale.US).format(Date(ts))
+    fun nombreMes(ts: Long): String = SimpleDateFormat("yyyy-MM", Locale.US).format(Date(ts))
 
-    private fun hace(ts: Long): String {
+    fun hace(ts: Long): String {
         val m = (System.currentTimeMillis() - ts) / 60000L
         return if (m < 1L) "ahora mismo"
         else if (m < 60L) "hace " + m + " min"
@@ -219,7 +219,7 @@ object Mas {
         else SimpleDateFormat("d MMM, h:mm a", Locale("es", "CO")).format(Date(ts))
     }
 
-    private fun irA(n: Int, refrescar: () -> Unit) {
+    fun irA(n: Int, refrescar: () -> Unit) {
         seccion = n
         if (n == 2) mesDesp = 0
         scrollRef?.scrollTo(0, 0)
@@ -239,10 +239,12 @@ object Mas {
         if (seccion == 1) gastos(a, cont, refrescar)
         else if (seccion == 2) resumen(a, cont, refrescar)
         else if (seccion == 4) acerca(a, cont, refrescar)
+        else if (seccion == 5) Mas2.salidas(a, cont, refrescar)
+        else if (seccion == 6) Mas2.opciones(a, cont, refrescar)
         else menu(a, cont, refrescar)
     }
 
-    private fun iniciarLazo(a: Activity, refrescar: () -> Unit) {
+    fun iniciarLazo(a: Activity, refrescar: () -> Unit) {
         if (lazo != null) return
         val r = object : Runnable {
             override fun run() {
@@ -258,14 +260,14 @@ object Mas {
         h.postDelayed(r, 3000)
     }
 
-    private fun volver(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
+    fun volver(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
         val t = texto(a, "◀ Volver", 15f, cian, true)
         t.setPadding(0, 0, dp(a, 10), dp(a, 12))
         t.setOnClickListener { irA(0, refrescar) }
         cont.addView(t)
     }
 
-    private fun item(c: Context, cont: LinearLayout, icono: String, titulo: String, desc: String, alTocar: () -> Unit) {
+    fun item(c: Context, cont: LinearLayout, icono: String, titulo: String, desc: String, alTocar: () -> Unit) {
         val t = tarjeta(c)
         t.setPadding(dp(c, 18), dp(c, 14), dp(c, 18), dp(c, 14))
         val fila = LinearLayout(c)
@@ -286,7 +288,7 @@ object Mas {
         cont.addView(t)
     }
 
-    private fun menu(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
+    fun menu(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
         cont.addView(texto(a, "Más", 28f, Color.WHITE, true))
         val sub = texto(a, "Herramientas para tu negocio", 14f, cian)
         sub.setPadding(0, dp(a, 2), 0, dp(a, 14))
@@ -295,10 +297,12 @@ object Mas {
         item(a, cont, "💸", "Gastos y ganancia neta", "Anota gasolina, peajes y más") { irA(1, refrescar) }
         item(a, cont, "📊", "Resumen del mes", "Totales, comparación y por banco") { irA(2, refrescar) }
         item(a, cont, "📤", "Exportar a Excel", "Guarda tus movimientos en un archivo") { dialogoExportar(a) }
+        item(a, cont, "🔔", "Salidas por confirmar", Mas2.textoPendientes(a)) { irA(5, refrescar) }
+        item(a, cont, "⚙️", "Opciones extra", "Sonido de caja y widget") { irA(6, refrescar) }
         item(a, cont, "ℹ️", "Acerca de Rovika", "Versión, privacidad y recomendar") { irA(4, refrescar) }
     }
 
-    private fun dialogoExportar(a: Activity) {
+    fun dialogoExportar(a: Activity) {
         val opciones = arrayOf("Este mes", "Mes anterior", "Todo el historial")
         AlertDialog.Builder(a)
             .setTitle("Exportar a Excel")
@@ -313,14 +317,14 @@ object Mas {
             .show()
     }
 
-    private fun compartir(a: Activity, txt: String) {
+    fun compartir(a: Activity, txt: String) {
         val i = Intent(Intent.ACTION_SEND)
         i.type = "text/plain"
         i.putExtra(Intent.EXTRA_TEXT, txt)
         a.startActivity(Intent.createChooser(i, "Compartir con"))
     }
 
-    private fun exportar(a: Activity, ini: Long, fin: Long, nombre: String) {
+    fun exportar(a: Activity, ini: Long, fin: Long, nombre: String) {
         try {
             val fFecha = SimpleDateFormat("yyyy-MM-dd", Locale.US)
             val fHora = SimpleDateFormat("HH:mm", Locale.US)
@@ -376,7 +380,7 @@ object Mas {
         }
     }
 
-    private fun filaBarra(c: Context, cont: LinearLayout, etiqueta: String, valor: Long, max: Long) {
+    fun filaBarra(c: Context, cont: LinearLayout, etiqueta: String, valor: Long, max: Long) {
         val f = LinearLayout(c)
         f.orientation = LinearLayout.VERTICAL
         val lf = LinearLayout.LayoutParams(-1, -2)
@@ -407,7 +411,7 @@ object Mas {
         cont.addView(f)
     }
 
-    private fun resumen(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
+    fun resumen(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
         volver(a, cont, refrescar)
         val rango = rangoMes(mesDesp)
         val ini = rango.first
@@ -519,7 +523,7 @@ object Mas {
         })
     }
 
-    private fun confirmarBorrar(a: Activity, r: Reg, refrescar: () -> Unit) {
+    fun confirmarBorrar(a: Activity, r: Reg, refrescar: () -> Unit) {
         AlertDialog.Builder(a)
             .setTitle("¿Borrar este gasto?")
             .setMessage(r.etiqueta + " · $ " + Aviso.fmt(r.monto))
@@ -531,7 +535,7 @@ object Mas {
             .show()
     }
 
-    private fun gastos(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
+    fun gastos(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
         volver(a, cont, refrescar)
         cont.addView(texto(a, "Gastos y ganancia neta", 24f, Color.WHITE, true))
         val sub = texto(a, "Anota lo que gastas y Rovika te dice cuánto ganaste de verdad", 13f, gris)
@@ -645,7 +649,7 @@ object Mas {
         }
     }
 
-    private fun manejo(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
+    fun manejo(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
         val top = LinearLayout(a)
         top.orientation = LinearLayout.HORIZONTAL
         top.gravity = Gravity.CENTER_VERTICAL
@@ -714,7 +718,7 @@ object Mas {
         cont.addView(texto(a, "La pantalla se queda encendida y se actualiza sola.", 12f, gris))
     }
 
-    private fun acerca(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
+    fun acerca(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
         volver(a, cont, refrescar)
         val ver = try {
             a.packageManager.getPackageInfo(a.packageName, 0).versionName
