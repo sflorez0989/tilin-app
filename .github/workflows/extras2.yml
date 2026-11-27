@@ -1,0 +1,187 @@
+name: Agregar extras 2
+on:
+  push:
+    paths:
+      - '.github/workflows/extras2.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: write
+jobs:
+  agregar:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Escribir salidas y opciones
+        run: |
+          mkdir -p app/src/main/java/com/tilin/app
+          cat > app/src/main/java/com/tilin/app/Mas2.kt <<'EOF'
+          package com.tilin.app
+
+          import android.app.Activity
+          import android.graphics.Color
+          import android.widget.LinearLayout
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          object Mas2 {
+              private val gris = Color.parseColor("#8A97B0")
+              private val rojo = Color.parseColor("#FF6B6B")
+
+              fun textoPendientes(a: Activity): String {
+                  val n = Salidas.pendientes(a).size
+                  return if (n == 0) "Compras, envíos y retiros detectados" else n.toString() + " por confirmar"
+              }
+
+              fun salidas(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
+                  Mas.volver(a, cont, refrescar)
+                  cont.addView(Mas.texto(a, "Salidas por confirmar", 24f, Color.WHITE, true))
+                  val sub = Mas.texto(a, "Rovika detecta compras con tarjeta, envíos, pagos y retiros. Tú decides cuáles cuentan como gasto.", 13f, gris)
+                  sub.setPadding(0, Mas.dp(a, 2), 0, Mas.dp(a, 14))
+                  cont.addView(sub)
+
+                  val lista = Salidas.pendientes(a)
+                  if (lista.isEmpty()) {
+                      val t = Mas.tarjeta(a)
+                      t.addView(Mas.texto(a, "No hay salidas pendientes.", 15f, Color.WHITE, true))
+                      val d = Mas.texto(a, "Cuando pagues con tu tarjeta o envíes plata, aparecerán aquí si tu banco manda notificación a este teléfono.", 13f, gris)
+                      d.setPadding(0, Mas.dp(a, 6), 0, 0)
+                      t.addView(d)
+                      cont.addView(t)
+                      return
+                  }
+
+                  Mas.filaBotones(
+                      a, cont,
+                      Mas.botonPeq(a, "✔ Contar todas", true) {
+                          Salidas.confirmarTodas(a)
+                          refrescar()
+                      },
+                      Mas.botonPeq(a, "🗑 Ignorar todas", false) {
+                          Salidas.descartarTodas(a)
+                          refrescar()
+                      }
+                  )
+
+                  val fecha = SimpleDateFormat("d MMM, h:mm a", Locale("es", "CO"))
+                  for (s in lista) {
+                      val t = Mas.tarjeta(a)
+                      t.addView(Mas.texto(a, s.tipo, 16f, Color.WHITE, true))
+                      t.addView(Mas.texto(a, "- $ " + Aviso.fmt(s.monto), 22f, rojo, true))
+                      val d = Mas.texto(a, fecha.format(Date(s.ts)) + " · " + s.detalle, 12f, gris)
+                      d.setPadding(0, 0, 0, Mas.dp(a, 10))
+                      t.addView(d)
+                      Mas.filaBotones(
+                          a, t,
+                          Mas.botonPeq(a, "Contar", true) {
+                              Salidas.confirmar(a, s.ts)
+                              refrescar()
+                          },
+                          Mas.botonPeq(a, "Ignorar", false) {
+                              Salidas.descartar(a, s.ts)
+                              refrescar()
+                          }
+                      )
+                      cont.addView(t)
+                  }
+              }
+
+              private fun alternador(a: Activity, cont: LinearLayout, titulo: String, desc: String, clave: String, def: Boolean, refrescar: () -> Unit) {
+                  val p = Mas.prefs(a)
+                  val on = p.getBoolean(clave, def)
+                  val t = Mas.tarjeta(a)
+                  t.addView(Mas.texto(a, titulo, 16f, Color.WHITE, true))
+                  val d = Mas.texto(a, desc, 13f, gris)
+                  d.setPadding(0, Mas.dp(a, 4), 0, Mas.dp(a, 10))
+                  t.addView(d)
+                  t.addView(Mas.boton(a, if (on) "✔ Activado (toca para apagar)" else "Apagado (toca para activar)", on) {
+                      p.edit().putBoolean(clave, !on).apply()
+                      refrescar()
+                  })
+                  cont.addView(t)
+              }
+
+              fun opciones(a: Activity, cont: LinearLayout, refrescar: () -> Unit) {
+                  Mas.volver(a, cont, refrescar)
+                  cont.addView(Mas.texto(a, "Opciones extra", 24f, Color.WHITE, true))
+                  val sub = Mas.texto(a, "Sonido, salidas y widget", 14f, Color.parseColor("#22D3EE"))
+                  sub.setPadding(0, Mas.dp(a, 2), 0, Mas.dp(a, 14))
+                  cont.addView(sub)
+
+                  alternador(
+                      a, cont, "🔔 Sonido de caja registradora",
+                      "Suena un cha-ching justo antes de que Rovika diga el pago.",
+                      "caja", true, refrescar
+                  )
+                  cont.addView(Mas.boton(a, "▶ Probar sonido", false) { Sonido.tocar() })
+
+                  alternador(
+                      a, cont, "💸 Contar salidas automáticamente",
+                      "Apagado: las compras con tarjeta, envíos, pagos y retiros esperan tu confirmación. Encendido: se suman solos a tus gastos.",
+                      "salidaAuto", false, refrescar
+                  )
+
+                  val w = Mas.tarjeta(a)
+                  w.addView(Mas.texto(a, "📱 Widget en tu pantalla de inicio", 16f, Color.WHITE, true))
+                  val d = Mas.texto(
+                      a,
+                      "Mantén presionado un espacio vacío de la pantalla de inicio, toca Widgets, busca Rovika y arrastra el widget. Muestra tu total del día y cuántos pagos llevas.",
+                      13f, gris
+                  )
+                  d.setPadding(0, Mas.dp(a, 4), 0, 0)
+                  w.addView(d)
+                  cont.addView(w)
+              }
+          }
+          EOF
+      - name: Conectar salidas y opciones
+        run: |
+          cat > parche2.py <<'EOF'
+          import sys
+          ruta = "app/src/main/java/com/tilin/app/Mas.kt"
+          try:
+              s = open(ruta, encoding="utf-8").read()
+          except FileNotFoundError:
+              print("No encuentro Mas.kt. Primero deja lista la pestana Mas con extras.yml.")
+              sys.exit(1)
+          if "Mas2." in s:
+              print("Ya estaba conectado.")
+              sys.exit(0)
+          s = s.replace("private fun ", "fun ")
+          anclaRuta = "else if (seccion == 4) acerca(a, cont, refrescar)"
+          if s.count(anclaRuta) != 1:
+              print("No pude conectar las rutas en Mas.kt")
+              sys.exit(1)
+          s = s.replace(anclaRuta, anclaRuta + "\n        else if (seccion == 5) Mas2.salidas(a, cont, refrescar)\n        else if (seccion == 6) Mas2.opciones(a, cont, refrescar)")
+          i = s.find('"Acerca de Rovika"')
+          if i < 0:
+              print("No pude conectar el menu en Mas.kt")
+              sys.exit(1)
+          j = s.rfind("\n", 0, i) + 1
+          fin = s.find("\n", i)
+          linea = s[j:fin]
+          indent = linea[:len(linea) - len(linea.lstrip())]
+          nuevo = (
+              indent + 'item(a, cont, "🔔", "Salidas por confirmar", Mas2.textoPendientes(a)) { irA(5, refrescar) }\n' +
+              indent + 'item(a, cont, "⚙️", "Opciones extra", "Sonido de caja y widget") { irA(6, refrescar) }\n'
+          )
+          s = s[:j] + nuevo + s[j:]
+          open(ruta, "w", encoding="utf-8").write(s)
+          print("Salidas y opciones conectadas.")
+          EOF
+          python3 parche2.py
+          rm -f parche2.py
+      - name: Guardar cambios
+        run: |
+          git config user.name "Rovika Bot"
+          git config user.email "rovika-bot@users.noreply.github.com"
+          git add app/src/main/java/com/tilin/app/Mas.kt app/src/main/java/com/tilin/app/Mas2.kt
+          if ! git diff --cached --quiet; then
+            git commit -m "Salidas por confirmar y opciones extra"
+            git push origin HEAD:main
+          fi
+      - name: Armar la app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --repo "$GITHUB_REPOSITORY"
