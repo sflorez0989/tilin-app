@@ -1,0 +1,768 @@
+name: Agregar extras 3
+on:
+  push:
+    paths:
+      - '.github/workflows/extras3.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: write
+jobs:
+  agregar:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Escribir barras, PDF y novedades
+        run: |
+          mkdir -p app/src/main/java/com/tilin/app
+          cat > app/src/main/java/com/tilin/app/Dia.kt <<'EOF'
+          package com.tilin.app
+
+          import android.app.Activity
+          import android.content.Context
+          import android.graphics.Canvas
+          import android.graphics.Color
+          import android.graphics.LinearGradient
+          import android.graphics.Paint
+          import android.graphics.RectF
+          import android.graphics.Shader
+          import android.graphics.Typeface
+          import android.view.MotionEvent
+          import android.view.View
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import java.text.SimpleDateFormat
+          import java.util.Calendar
+          import java.util.Date
+          import java.util.Locale
+
+          class BarrasSel(
+              c: Context,
+              private val vals: List<Long>,
+              private val etiquetas: List<String>,
+              private val sel: Int,
+              private val alSeleccionar: (Int) -> Unit
+          ) : View(c) {
+              private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+              private var ultimoX = 0f
+
+              init {
+                  isClickable = true
+                  setOnClickListener {
+                      val n = vals.size
+                      if (n > 0 && width > 0) {
+                          val i = (ultimoX / (width.toFloat() / n)).toInt().coerceIn(0, n - 1)
+                          alSeleccionar(i)
+                      }
+                  }
+              }
+
+              override fun onTouchEvent(e: MotionEvent): Boolean {
+                  ultimoX = e.x
+                  return super.onTouchEvent(e)
+              }
+
+              override fun onDraw(canvas: Canvas) {
+                  super.onDraw(canvas)
+                  val d = resources.displayMetrics.density
+                  val w = width.toFloat()
+                  val base = height.toFloat() - 22f * d
+                  val tope = 6f * d
+                  val max = (vals.maxOrNull() ?: 0L).coerceAtLeast(1L).toFloat()
+                  val n = vals.size
+                  if (n == 0) return
+                  val slot = w / n
+                  val bw = slot * 0.5f
+                  for (i in 0 until n) {
+                      val x = slot * i + (slot - bw) / 2f
+                      var alto = (base - tope) * vals[i].toFloat() / max
+                      if (alto < 3f * d) alto = 3f * d
+                      val dest = if (sel >= 0) i == sel else i == n - 1
+                      p.shader = LinearGradient(
+                          0f, base - alto, 0f, base,
+                          Color.parseColor(if (dest) "#22D3EE" else "#2F6BFF"),
+                          Color.parseColor(if (dest) "#2F6BFF" else "#1B2F66"),
+                          Shader.TileMode.CLAMP
+                      )
+                      canvas.drawRoundRect(RectF(x, base - alto, x + bw, base), 6f * d, 6f * d, p)
+                      p.shader = null
+                      p.color = Color.parseColor(if (dest) "#22D3EE" else "#8A97B0")
+                      p.textSize = 11f * d
+                      p.textAlign = Paint.Align.CENTER
+                      p.typeface = if (dest) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                      canvas.drawText(etiquetas[i], x + bw / 2f, height.toFloat() - 5f * d, p)
+                  }
+              }
+          }
+
+          object Dia {
+              var sel = -1
+              private val diaFmt = SimpleDateFormat("yyyyMMdd", Locale.US)
+              private val gris = Color.parseColor("#8A97B0")
+              private val verde = Color.parseColor("#2EE59D")
+              private val rojo = Color.parseColor("#FF6B6B")
+              private val cian = Color.parseColor("#22D3EE")
+
+              private fun t(a: Context, s: String, size: Float, color: Int, bold: Boolean = false): TextView {
+                  val v = TextView(a)
+                  v.text = s
+                  v.textSize = size
+                  v.setTextColor(color)
+                  if (bold) v.setTypeface(null, Typeface.BOLD)
+                  return v
+              }
+
+              fun detalle(a: Activity, card: LinearLayout) {
+                  val dens = a.resources.displayMetrics.density
+                  if (sel < 0) {
+                      val h = t(a, "Toca una barra para ver los pagos de ese día", 12f, gris)
+                      h.setPadding(0, (8 * dens).toInt(), 0, 0)
+                      card.addView(h)
+                      return
+                  }
+                  val cal = Calendar.getInstance()
+                  cal.add(Calendar.DAY_OF_YEAR, -(6 - sel))
+                  val clave = diaFmt.format(cal.time)
+                  val etq = if (sel == 6) "Hoy"
+                  else if (sel == 5) "Ayer"
+                  else {
+                      val s = SimpleDateFormat("EEEE d 'de' MMMM", Locale("es", "CO")).format(cal.time)
+                      s.substring(0, 1).uppercase() + s.substring(1)
+                  }
+                  val prefs = a.getSharedPreferences("tilin", Context.MODE_PRIVATE)
+                  val pagos = mutableListOf<Triple<Long, Long, String>>()
+                  for (linea in (prefs.getString("pagos", "") ?: "").split("\n")) {
+                      if (linea.isBlank()) continue
+                      val p = linea.split("|")
+                      if (p.size < 3) continue
+                      val ts = p[0].toLongOrNull() ?: continue
+                      if (diaFmt.format(Date(ts)) != clave) continue
+                      val banco = if (p.size > 4) p[4] else p[2]
+                      pagos.add(Triple(ts, p[1].toLongOrNull() ?: 0L, banco))
+                  }
+                  pagos.sortByDescending { it.first }
+                  var gastos = 0L
+                  for (linea in (prefs.getString("gastos", "") ?: "").split("\n")) {
+                      if (linea.isBlank()) continue
+                      val p = linea.split("|")
+                      if (p.size < 3) continue
+                      val ts = p[0].toLongOrNull() ?: continue
+                      if (diaFmt.format(Date(ts)) == clave) gastos += (p[1].toLongOrNull() ?: 0L)
+                  }
+                  var total = 0L
+                  for (x in pagos) total += x.second
+
+                  val sep = View(a)
+                  sep.setBackgroundColor(Color.parseColor("#1F2F4D"))
+                  val sl = LinearLayout.LayoutParams(-1, (1 * dens).toInt().coerceAtLeast(1))
+                  sl.setMargins(0, (12 * dens).toInt(), 0, (12 * dens).toInt())
+                  sep.layoutParams = sl
+                  card.addView(sep)
+
+                  card.addView(t(a, etq, 16f, Color.WHITE, true))
+                  card.addView(t(a, "$ " + Aviso.fmt(total), 26f, cian, true))
+                  card.addView(t(a, pagos.size.toString() + (if (pagos.size == 1) " pago" else " pagos"), 13f, verde, true))
+                  if (gastos > 0L) {
+                      val neto = total - gastos
+                      val g = t(
+                          a,
+                          "Gastos $ " + Aviso.fmt(gastos) + "  ·  Neto " + (if (neto < 0L) "- $ " + Aviso.fmt(-neto) else "$ " + Aviso.fmt(neto)),
+                          13f, rojo, true
+                      )
+                      g.setPadding(0, (2 * dens).toInt(), 0, 0)
+                      card.addView(g)
+                  }
+                  if (pagos.isEmpty()) {
+                      val v = t(a, "Sin pagos este día.", 13f, gris)
+                      v.setPadding(0, (8 * dens).toInt(), 0, 0)
+                      card.addView(v)
+                  } else {
+                      val hora = SimpleDateFormat("h:mm a", Locale("es", "CO"))
+                      for (x in pagos.take(15)) {
+                          val fila = LinearLayout(a)
+                          fila.orientation = LinearLayout.HORIZONTAL
+                          fila.setPadding(0, (7 * dens).toInt(), 0, 0)
+                          val b = t(a, x.third, 14f, Color.WHITE, true)
+                          b.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                          fila.addView(b)
+                          val hr = t(a, hora.format(Date(x.first)), 12f, gris)
+                          hr.setPadding(0, 0, (10 * dens).toInt(), 0)
+                          fila.addView(hr)
+                          fila.addView(t(a, "+ $ " + Aviso.fmt(x.second), 15f, verde, true))
+                          card.addView(fila)
+                      }
+                      if (pagos.size > 15) {
+                          val m = t(a, "y " + (pagos.size - 15) + " más: míralos en Movimientos", 12f, gris)
+                          m.setPadding(0, (8 * dens).toInt(), 0, 0)
+                          card.addView(m)
+                      }
+                  }
+                  val c = t(a, "Toca la misma barra otra vez para cerrar", 11f, gris)
+                  c.setPadding(0, (10 * dens).toInt(), 0, 0)
+                  card.addView(c)
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/tilin/app/Pdf.kt <<'EOF'
+          package com.tilin.app
+
+          import android.app.Activity
+          import android.content.ContentValues
+          import android.content.Context
+          import android.content.Intent
+          import android.graphics.Canvas
+          import android.graphics.Color
+          import android.graphics.Paint
+          import android.graphics.Typeface
+          import android.graphics.pdf.PdfDocument
+          import android.os.Build
+          import android.os.Environment
+          import android.provider.MediaStore
+          import android.widget.Toast
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          object Pdf {
+              private const val W = 595
+              private const val H = 842
+              private const val M = 40f
+
+              private class Fila(val ts: Long, val monto: Long, val etiqueta: String)
+
+              private class Hoja(val doc: PdfDocument) {
+                  var n = 0
+                  var pagina: PdfDocument.Page? = null
+                  var canvas: Canvas? = null
+                  var y = 0f
+                  val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+                  fun nueva() {
+                      cerrar()
+                      n += 1
+                      val info = PdfDocument.PageInfo.Builder(W, H, n).create()
+                      val pg = doc.startPage(info)
+                      pagina = pg
+                      canvas = pg.canvas
+                      y = M + 6f
+                  }
+
+                  fun cerrar() {
+                      val pg = pagina ?: return
+                      val cv = canvas
+                      if (cv != null) {
+                          p.reset()
+                          p.isAntiAlias = true
+                          p.textSize = 9f
+                          p.color = Color.GRAY
+                          p.textAlign = Paint.Align.CENTER
+                          cv.drawText("Rovika · página " + n, W / 2f, H - 18f, p)
+                      }
+                      doc.finishPage(pg)
+                      pagina = null
+                      canvas = null
+                  }
+
+                  fun asegurar(alto: Float) {
+                      if (y + alto > H - 50f) nueva()
+                  }
+              }
+
+              private fun leer(c: Context, clave: String, banco: Boolean): List<Fila> {
+                  val r = mutableListOf<Fila>()
+                  val prefs = c.getSharedPreferences("tilin", Context.MODE_PRIVATE)
+                  for (linea in (prefs.getString(clave, "") ?: "").split("\n")) {
+                      if (linea.isBlank()) continue
+                      val p = linea.split("|")
+                      if (p.size < 3) continue
+                      val ts = p[0].toLongOrNull() ?: continue
+                      val monto = p[1].toLongOrNull() ?: 0L
+                      val et = if (banco) (if (p.size > 4) p[4] else p[2]) else p[2]
+                      r.add(Fila(ts, monto, et))
+                  }
+                  return r
+              }
+
+              private fun limpiar(s: String): String {
+                  val r = s.filter { it.code in 32..126 || it.code in 160..255 }.trim()
+                  return if (r.isEmpty()) "Otro" else r
+              }
+
+              private fun dinero(n: Long): String =
+                  (if (n < 0L) "- $ " else "$ ") + Aviso.fmt(if (n < 0L) -n else n)
+
+              private fun texto(
+                  h: Hoja, t: String, x: Float, size: Float, color: Int,
+                  bold: Boolean = false, derecha: Boolean = false, yy: Float = h.y
+              ) {
+                  val p = h.p
+                  p.reset()
+                  p.isAntiAlias = true
+                  p.textSize = size
+                  p.color = color
+                  p.typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                  p.textAlign = if (derecha) Paint.Align.RIGHT else Paint.Align.LEFT
+                  h.canvas?.drawText(t, x, yy, p)
+              }
+
+              private fun seccion(h: Hoja, titulo: String) {
+                  h.asegurar(50f)
+                  h.y += 22f
+                  texto(h, titulo, M, 13f, Color.parseColor("#0B1230"), true)
+                  h.y += 6f
+                  h.p.reset()
+                  h.p.color = Color.parseColor("#22D3EE")
+                  h.p.strokeWidth = 1.5f
+                  h.canvas?.drawLine(M, h.y, W - M, h.y, h.p)
+                  h.y += 16f
+              }
+
+              private fun fila(h: Hoja, izq: String, medio: String, der: String, colorDer: Int) {
+                  h.asegurar(18f)
+                  texto(h, izq, M, 11f, Color.parseColor("#222222"))
+                  if (medio.isNotEmpty()) texto(h, medio, 230f, 11f, Color.parseColor("#666666"))
+                  texto(h, der, W - M, 11f, colorDer, true, true)
+                  h.y += 17f
+              }
+
+              fun mes(a: Activity, ini: Long, fin: Long, nombre: String) {
+                  try {
+                      if (Build.VERSION.SDK_INT < 29) {
+                          Toast.makeText(a, "El PDF necesita Android 10 o más nuevo. Usa Excel.", Toast.LENGTH_LONG).show()
+                          return
+                      }
+                      val pagos = leer(a, "pagos", true).filter { it.ts >= ini && it.ts < fin }.sortedBy { it.ts }
+                      val gastos = leer(a, "gastos", false).filter { it.ts >= ini && it.ts < fin }.sortedBy { it.ts }
+                      if (pagos.isEmpty() && gastos.isEmpty()) {
+                          Toast.makeText(a, "No hay movimientos en ese mes", Toast.LENGTH_LONG).show()
+                          return
+                      }
+                      val esCO = Locale("es", "CO")
+                      val diaF = SimpleDateFormat("yyyyMMdd", Locale.US)
+                      val fFecha = SimpleDateFormat("EEE d MMM", esCO)
+                      val fHora = SimpleDateFormat("d MMM · h:mm a", esCO)
+                      val mesRaw = SimpleDateFormat("MMMM yyyy", esCO).format(Date(ini))
+                      val mesTxt = mesRaw.substring(0, 1).uppercase() + mesRaw.substring(1)
+
+                      var ingresos = 0L
+                      for (p in pagos) ingresos += p.monto
+                      var gastosT = 0L
+                      for (g in gastos) gastosT += g.monto
+                      val neto = ingresos - gastosT
+
+                      val porDia = java.util.TreeMap<String, LongArray>()
+                      val etqDia = HashMap<String, String>()
+                      for (p in pagos) {
+                          val k = diaF.format(Date(p.ts))
+                          val arr = porDia.getOrPut(k) { LongArray(2) }
+                          arr[0] += p.monto
+                          arr[1] += 1L
+                          if (!etqDia.containsKey(k)) etqDia[k] = fFecha.format(Date(p.ts))
+                      }
+                      var mejorK = ""
+                      var mejorV = 0L
+                      for (e in porDia.entries) {
+                          if (e.value[0] > mejorV) {
+                              mejorV = e.value[0]
+                              mejorK = e.key
+                          }
+                      }
+
+                      val doc = PdfDocument()
+                      val h = Hoja(doc)
+                      h.nueva()
+                      h.p.reset()
+                      h.p.color = Color.parseColor("#0B1230")
+                      h.canvas?.drawRect(0f, 0f, W.toFloat(), 100f, h.p)
+                      h.y = 46f
+                      texto(h, "ROVIKA", M, 26f, Color.parseColor("#22D3EE"), true)
+                      h.y = 72f
+                      texto(h, "Resumen de " + mesTxt, M, 14f, Color.WHITE)
+                      h.y = 140f
+
+                      val cols = listOf(
+                          Triple("INGRESOS", ingresos, Color.parseColor("#0E9F6E")),
+                          Triple("GASTOS", gastosT, Color.parseColor("#D64545")),
+                          Triple("GANANCIA NETA", neto, Color.parseColor("#0B1230"))
+                      )
+                      for (i in cols.indices) {
+                          val x = M + i * 175f
+                          texto(h, cols[i].first, x, 9f, Color.parseColor("#777777"), true, false, h.y)
+                          texto(h, dinero(cols[i].second), x, 17f, cols[i].third, true, false, h.y + 22f)
+                      }
+                      h.y += 52f
+
+                      texto(h, pagos.size.toString() + " pagos en " + porDia.size + " días trabajados", M, 11f, Color.parseColor("#333333"))
+                      h.y += 16f
+                      if (porDia.size > 0) {
+                          texto(h, "Promedio por día: " + dinero(ingresos / porDia.size), M, 11f, Color.parseColor("#333333"))
+                          h.y += 16f
+                      }
+                      if (mejorV > 0L) {
+                          texto(h, "Mejor día: " + (etqDia[mejorK] ?: mejorK) + " con " + dinero(mejorV), M, 11f, Color.parseColor("#0E9F6E"), true)
+                          h.y += 16f
+                      }
+
+                      if (porDia.isNotEmpty()) {
+                          seccion(h, "Ingresos por día")
+                          for (e in porDia.entries) {
+                              val n = e.value[1]
+                              fila(h, etqDia[e.key] ?: e.key, n.toString() + (if (n == 1L) " pago" else " pagos"), dinero(e.value[0]), Color.parseColor("#0E9F6E"))
+                          }
+                      }
+                      if (pagos.isNotEmpty()) {
+                          seccion(h, "Detalle de ingresos")
+                          for (p in pagos) {
+                              fila(h, fHora.format(Date(p.ts)), limpiar(p.etiqueta), "+ " + dinero(p.monto), Color.parseColor("#0E9F6E"))
+                          }
+                      }
+                      if (gastos.isNotEmpty()) {
+                          seccion(h, "Gastos")
+                          for (g in gastos) {
+                              fila(h, fHora.format(Date(g.ts)), limpiar(g.etiqueta), "- " + dinero(g.monto), Color.parseColor("#D64545"))
+                          }
+                      }
+                      h.cerrar()
+
+                      val archivo = "Rovika_" + nombre + ".pdf"
+                      val v = ContentValues()
+                      v.put(MediaStore.MediaColumns.DISPLAY_NAME, archivo)
+                      v.put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                      v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                      val uri = a.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v)
+                      var ok = false
+                      if (uri != null) {
+                          val os = a.contentResolver.openOutputStream(uri)
+                          if (os != null) {
+                              doc.writeTo(os)
+                              os.close()
+                              ok = true
+                          }
+                      }
+                      doc.close()
+                      if (ok && uri != null) {
+                          Toast.makeText(a, "PDF guardado en Descargas: " + archivo, Toast.LENGTH_LONG).show()
+                          try {
+                              val i = Intent(Intent.ACTION_VIEW)
+                              i.setDataAndType(uri, "application/pdf")
+                              i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                              a.startActivity(i)
+                          } catch (e: Exception) { }
+                      } else {
+                          Toast.makeText(a, "No pude guardar el PDF. Intenta de nuevo.", Toast.LENGTH_LONG).show()
+                      }
+                  } catch (e: Exception) {
+                      Toast.makeText(a, "No pude crear el PDF. Intenta de nuevo.", Toast.LENGTH_LONG).show()
+                  }
+              }
+          }
+          EOF
+          cat > app/src/main/java/com/tilin/app/Novedades.kt <<'EOF'
+          package com.tilin.app
+
+          import android.app.Activity
+          import android.app.Dialog
+          import android.content.Context
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.view.Gravity
+          import android.view.Window
+          import android.view.WindowManager
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+
+          class PasoNov(
+              val icono: String,
+              val titulo: String,
+              val texto: String,
+              val boton: String,
+              val pestana: Int,
+              val seccion: Int
+          )
+
+          object Novedades {
+              const val ID = "2.9"
+              var nav: ((Int, Int) -> Unit)? = null
+
+              private val pasos = listOf(
+                  PasoNov("🆕", "Novedades de Rovika", "Esta versión trae cosas nuevas. Te las muestro en menos de un minuto. Puedes volver a verlas cuando quieras en Más → Qué hay de nuevo.", "", -1, -1),
+                  PasoNov("📈", "Toca las barras", "En Inicio, toca cualquier barra de la gráfica de 7 días y abajo verás el total y los pagos de ese día. Toca la misma barra otra vez para cerrar.", "Probarlo en Inicio", 0, -1),
+                  PasoNov("🏠", "Inicio más limpio", "Inicio ahora muestra tus últimos 3 pagos. Para ver todos está el botón Ver todos los movimientos, que te lleva a Movimientos.", "Ir a Movimientos", 1, -1),
+                  PasoNov("📕", "PDF y Excel", "En Más → Exportar puedes sacar un PDF bonito del mes, para mostrar o imprimir, o un archivo de Excel para tu contabilidad. Los dos se guardan en Descargas.", "Abrir Más", 3, 0),
+                  PasoNov("💳", "Salidas por confirmar", "Rovika detecta compras con tarjeta, envíos y retiros. Tú decides con un toque cuáles cuentan como gasto.", "Ver salidas", 3, 5),
+                  PasoNov("🔔", "Sonido y widget", "Ahora suena una caja registradora antes de la voz, y puedes poner un widget con tu total del día en la pantalla de inicio.", "Ver opciones", 3, 6)
+              )
+
+              fun mostrarSiToca(a: Activity) {
+                  try {
+                      val p = a.getSharedPreferences("tilin", Context.MODE_PRIVATE)
+                      if (p.getString("novVisto", "") == ID) return
+                      if (!p.getBoolean("tutVisto", false)) {
+                          p.edit().putString("novVisto", ID).apply()
+                          return
+                      }
+                      mostrar(a)
+                  } catch (e: Exception) { }
+              }
+
+              fun mostrar(a: Activity) {
+                  if (a.isFinishing || a.isDestroyed) return
+                  val dens = a.resources.displayMetrics.density
+                  val dp = { v: Int -> (v * dens).toInt() }
+                  val cian = Color.parseColor("#22D3EE")
+                  val azul = Color.parseColor("#2F6BFF")
+                  val gris = Color.parseColor("#8A97B0")
+
+                  val d = Dialog(a)
+                  d.requestWindowFeature(Window.FEATURE_NO_TITLE)
+                  d.setCancelable(true)
+                  d.setOnDismissListener {
+                      a.getSharedPreferences("tilin", Context.MODE_PRIVATE).edit().putString("novVisto", ID).apply()
+                  }
+
+                  val raiz = LinearLayout(a)
+                  raiz.orientation = LinearLayout.VERTICAL
+                  val fondo = GradientDrawable()
+                  fondo.setColor(Color.parseColor("#0F1626"))
+                  fondo.cornerRadius = dp(24).toFloat()
+                  fondo.setStroke(dp(1), cian)
+                  raiz.background = fondo
+                  raiz.setPadding(dp(22), dp(18), dp(22), dp(22))
+                  val scroll = ScrollView(a)
+                  scroll.addView(raiz)
+                  d.setContentView(scroll)
+
+                  var paso = 0
+
+                  fun boton(t: String, lleno: Boolean, accion: () -> Unit): Button {
+                      val b = Button(a)
+                      b.text = t
+                      b.isAllCaps = false
+                      b.textSize = 15f
+                      b.setTypeface(null, Typeface.BOLD)
+                      b.setTextColor(if (lleno) Color.WHITE else cian)
+                      val g = if (lleno) GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(azul, cian)) else GradientDrawable()
+                      if (!lleno) {
+                          g.setColor(Color.TRANSPARENT)
+                          g.setStroke(dp(1), cian)
+                      }
+                      g.cornerRadius = dp(16).toFloat()
+                      b.background = g
+                      b.setOnClickListener { accion() }
+                      return b
+                  }
+
+                  fun pintar() {
+                      raiz.removeAllViews()
+                      val s = pasos[paso]
+
+                      val top = LinearLayout(a)
+                      top.orientation = LinearLayout.HORIZONTAL
+                      top.gravity = Gravity.CENTER_VERTICAL
+                      val pts = StringBuilder()
+                      for (k in pasos.indices) pts.append(if (k == paso) "● " else "○ ")
+                      val tp = TextView(a)
+                      tp.text = pts.toString().trim()
+                      tp.textSize = 13f
+                      tp.setTextColor(cian)
+                      tp.setTypeface(null, Typeface.BOLD)
+                      tp.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                      top.addView(tp)
+                      val cerrar = TextView(a)
+                      cerrar.text = "Cerrar ✕"
+                      cerrar.textSize = 13f
+                      cerrar.setTextColor(gris)
+                      cerrar.setTypeface(null, Typeface.BOLD)
+                      cerrar.setPadding(dp(10), dp(6), dp(4), dp(6))
+                      cerrar.setOnClickListener { d.dismiss() }
+                      top.addView(cerrar)
+                      raiz.addView(top)
+
+                      val ic = TextView(a)
+                      ic.text = s.icono
+                      ic.textSize = 46f
+                      ic.setPadding(0, dp(14), 0, dp(4))
+                      raiz.addView(ic)
+
+                      val ti = TextView(a)
+                      ti.text = s.titulo
+                      ti.textSize = 22f
+                      ti.setTextColor(Color.WHITE)
+                      ti.setTypeface(null, Typeface.BOLD)
+                      ti.setPadding(0, 0, 0, dp(8))
+                      raiz.addView(ti)
+
+                      val tx = TextView(a)
+                      tx.text = s.texto
+                      tx.textSize = 15f
+                      tx.setTextColor(Color.parseColor("#C9D3E8"))
+                      tx.setLineSpacing(0f, 1.15f)
+                      tx.setPadding(0, 0, 0, dp(16))
+                      raiz.addView(tx)
+
+                      if (s.boton.isNotEmpty()) {
+                          val b = boton(s.boton, false) {
+                              d.dismiss()
+                              nav?.invoke(s.pestana, s.seccion)
+                          }
+                          val lp = LinearLayout.LayoutParams(-1, dp(48))
+                          lp.setMargins(0, 0, 0, dp(10))
+                          b.layoutParams = lp
+                          raiz.addView(b)
+                      }
+
+                      val fila = LinearLayout(a)
+                      fila.orientation = LinearLayout.HORIZONTAL
+                      if (paso > 0) {
+                          val atras = boton("◀ Atrás", false) {
+                              paso -= 1
+                              pintar()
+                          }
+                          val lp = LinearLayout.LayoutParams(0, dp(48), 1f)
+                          lp.setMargins(0, 0, dp(6), 0)
+                          atras.layoutParams = lp
+                          fila.addView(atras)
+                      }
+                      val ultimo = paso == pasos.size - 1
+                      val sig = boton(if (ultimo) "Terminar ✔" else "Siguiente ▶", true) {
+                          if (ultimo) {
+                              d.dismiss()
+                          } else {
+                              paso += 1
+                              pintar()
+                          }
+                      }
+                      val lp2 = LinearLayout.LayoutParams(0, dp(48), 1f)
+                      sig.layoutParams = lp2
+                      fila.addView(sig)
+                      raiz.addView(fila)
+                  }
+
+                  pintar()
+                  d.show()
+                  d.window?.setBackgroundDrawableResource(android.R.color.transparent)
+                  val ancho = minOf((a.resources.displayMetrics.widthPixels * 0.92f).toInt(), dp(520))
+                  d.window?.setLayout(ancho, WindowManager.LayoutParams.WRAP_CONTENT)
+              }
+          }
+          EOF
+      - name: Conectar todo
+        run: |
+          cat > parche3.py <<'EOF'
+          import re
+          import sys
+
+          def leer(ruta):
+              try:
+                  return open(ruta, encoding="utf-8").read()
+              except FileNotFoundError:
+                  print("No encuentro " + ruta + ". Primero deja lista la app 2.8.")
+                  sys.exit(1)
+
+          rutaA = "app/src/main/java/com/tilin/app/MainActivity.kt"
+          rutaM = "app/src/main/java/com/tilin/app/Mas.kt"
+          a = leer(rutaA)
+          m = leer(rutaM)
+
+          if "Dia.detalle" not in a:
+              cambios = [
+                  ('for (p in pagos) contenido.addView(filaPago(p, hora))',
+                   'for (p in pagos.take(3)) contenido.addView(filaPago(p, hora))\n'
+                   '                  if (pagos.size > 3) {\n'
+                   '                      contenido.addView(boton("Ver todos los movimientos (" + pagos.size + ")", false) { pestana = 1; scroll.scrollTo(0, 0); dibujar() })\n'
+                   '                  }'),
+                  ('val grafica = Barras(this, vals, etiquetas)',
+                   'val grafica = BarrasSel(this, vals, etiquetas, Dia.sel) { i -> Dia.sel = if (Dia.sel == i) -1 else i; dibujar() }'),
+                  ('tSem.addView(grafica)',
+                   'tSem.addView(grafica)\n                  Dia.detalle(this, tSem)'),
+                  ('Actualizar.revisarSiToca(this) {',
+                   'Novedades.nav = { p, s -> pestana = p; if (s >= 0) { Mas.irA(s) { dibujar() } } else { scroll.scrollTo(0, 0); dibujar() } }\n'
+                   '        Novedades.mostrarSiToca(this)\n'
+                   '        Actualizar.revisarSiToca(this) {'),
+              ]
+              for viejo, nuevo in cambios:
+                  if a.count(viejo) != 1:
+                      print("No pude conectar esta parte en MainActivity: " + viejo)
+                      sys.exit(1)
+                  a = a.replace(viejo, nuevo)
+              a = a.replace('texto("Pagos de hoy", 18f', 'texto("Últimos pagos de hoy", 18f')
+              open(rutaA, "w", encoding="utf-8").write(a)
+              print("MainActivity conectada.")
+          else:
+              print("MainActivity ya estaba conectada.")
+
+          m = m.replace("private fun ", "fun ")
+
+          if "dialogoExportarCsv" not in m:
+              patron = re.compile(r"fun dialogoExportar\(a: Activity\) \{")
+              if not patron.search(m):
+                  print("No pude conectar el exportar en Mas.kt")
+                  sys.exit(1)
+              nuevo = '''fun dialogoExportar(a: Activity) {
+                  AlertDialog.Builder(a)
+                      .setTitle("Exportar")
+                      .setItems(arrayOf("📗 Excel (.csv) para tu contabilidad", "📕 PDF bonito del mes")) { _, i ->
+                          if (i == 0) dialogoExportarCsv(a) else dialogoPdf(a)
+                      }
+                      .show()
+              }
+
+              fun dialogoPdf(a: Activity) {
+                  AlertDialog.Builder(a)
+                      .setTitle("PDF del mes")
+                      .setItems(arrayOf("Este mes", "Mes anterior")) { _, i ->
+                          val r = rangoMes(if (i == 0) 0 else -1)
+                          Pdf.mes(a, r.first, r.second, nombreMes(r.first))
+                      }
+                      .show()
+              }
+
+              fun dialogoExportarCsv(a: Activity) {'''
+              m = patron.sub(lambda _: nuevo, m, count=1)
+
+          m = m.replace('"Exportar a Excel", "Guarda tus movimientos en un archivo"', '"Exportar a Excel o PDF", "Un PDF bonito o tu archivo de Excel"')
+
+          if "Novedades.mostrar" not in m:
+              i = m.find('"Acerca de Rovika"')
+              if i < 0:
+                  print("No pude conectar el menu en Mas.kt")
+                  sys.exit(1)
+              j = m.rfind("\n", 0, i) + 1
+              fin = m.find("\n", i)
+              linea = m[j:fin]
+              indent = linea[:len(linea) - len(linea.lstrip())]
+              nuevo_item = indent + 'item(a, cont, "🆕", "Qué hay de nuevo", "Las novedades de esta versión") { Novedades.mostrar(a) }\n'
+              m = m[:j] + nuevo_item + m[j:]
+
+          if "Pdf.mes(a, ini, fin" not in m:
+              pat = re.compile(r'\n([ \t]*)cont\.addView\(boton\(a, "📤 Exportar este mes a Excel", true\) \{')
+              if pat.search(m):
+                  def rep(mo):
+                      ind = mo.group(1)
+                      return ("\n" + ind + 'cont.addView(boton(a, "📕 Descargar PDF de este mes", false) { Pdf.mes(a, ini, fin, nombreMes(ini)) })\n'
+                              + ind + 'cont.addView(boton(a, "📤 Exportar este mes a Excel", true) {')
+                  m = pat.sub(rep, m, count=1)
+              else:
+                  print("Aviso: no encontre el boton de exportar del resumen, se omite.")
+
+          open(rutaM, "w", encoding="utf-8").write(m)
+          print("Mas.kt conectado.")
+          EOF
+          python3 parche3.py
+          rm -f parche3.py
+      - name: Guardar cambios
+        run: |
+          git config user.name "Rovika Bot"
+          git config user.email "rovika-bot@users.noreply.github.com"
+          git add app/src/main/java/com/tilin/app
+          if ! git diff --cached --quiet; then
+            git commit -m "Barras tocables, inicio limpio, PDF y novedades"
+            git push origin HEAD:main
+          fi
+      - name: Armar la app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --repo "$GITHUB_REPOSITORY"
